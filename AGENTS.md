@@ -5,9 +5,8 @@ Keep this file up to date whenever the stack, architecture, or conventions chang
 
 ## What is Ligera
 
-A mobile-first workout tracker (PWA) for **Ivar**
-
-'s** 5-day advanced training routine. The app lets the user:
+A mobile-first workout tracker (PWA) for **Ivar's** 5-day advanced training
+routine. The app lets the user:
 
 - Start an editable routine template (per-user, seeded from the 5 default days), or add exercises by hand
 - Log each set with kg / reps / RIR; mark sets complete
@@ -16,6 +15,26 @@ A mobile-first workout tracker (PWA) for **Ivar**
 
 > Product north star (deferred, not implemented): friend-to-friend competition
 > (weekly volume leaderboards). The schema was normalized with this in mind.
+
+## Spec-first development (constitution)
+
+**`docs/constitution.md` is the absolute source of truth.** If any code, spec,
+comment, plan or instruction conflicts with it, the constitution wins. Read it
+before starting any work.
+
+All non-trivial work follows a spec-driven flow:
+
+```
+constitution.md  →  specs/NNN-feature/spec.md  →  plan.md  →  tasks.md  →  code
+```
+
+- Write the spec **before** the code. A spec may not contradict the constitution.
+- Templates: `specs/0000-template/`. Pick the next free `NNN`.
+- Keep the spec current when a feature changes (same change).
+- The constitution changes only by explicit, user-approved amendment.
+
+Shipped specs: `001-progression-summary`, `002-exercise-library`,
+`003-lock-completed-sets`, `004-muscle-group-progress`.
 
 ## Stack
 
@@ -50,16 +69,19 @@ lib/
   auth.ts         useSession, useUserId, useProfile, signUp/signIn/signOut
   data.ts         Workout types, fetchWorkouts, saveWorkout (RPC), deleteWorkout/Exercise, useWorkouts
   routines.ts     editable routine days: fetch/seed, CRUD, useRoutines
-  stats.ts        Epley 1RM, PRs, lastBestSet, shouldProgress, filters
+  exercises.ts    per-user exercise library: fetch/seed, CRUD, renameExercise (RPC), useExercises, buildPickerOptions
+  muscles.ts      muscle groups, exercise→group map, muscleGroupFor
+  stats.ts        Epley 1RM, PRs, lastBestSet, exerciseProgress, muscleGroupStats, filters
   workout-data.ts exerciseOptions, defaultRoutineDays (seed), target helpers, DraftSet/DraftExercise
   supabase/
     client.ts     browser Supabase client (singleton)
     server.ts     server client via cookies
     middleware.ts updateSession helper consumed by root proxy.ts
-supabase/migrations/   SQL migrations (0001_init, 0002_rir, 0003_routines, 0004_edit_workout)
+supabase/migrations/   SQL migrations (0001_init, 0002_rir, 0003_routines, 0004_edit_workout, 0005_exercise_library)
 scripts/generate-icons.mjs  pure-Node PNG icon generator (no deps)
 public/           manifest.json, sw.js, icons/
-docs/             ROADMAP.md, SUPABASE.md
+docs/             constitution.md, ROADMAP.md, SUPABASE.md
+specs/            spec-first feature specs (0000-template, 001..004 shipped)
 ```
 
 Screens are interchangeable views rendered inside `app/page.tsx`, switched by
@@ -73,10 +95,11 @@ Screens are interchangeable views rendered inside `app/page.tsx`, switched by
 - `workout_sets` — exercise_id (FK), kg numeric(6,1), reps int, position, **rir smallint nullable (0–3)**
 - `routines` — user_id, title, position (editable routine days, seeded per user)
 - `routine_exercises` — routine_id (FK), name, sets, reps_min, reps_max, rir text, note, bodyweight, position
+- `exercises` — user_id, name, muscle_group, position (per-user exercise library, seeded per user, unique `(user_id, lower(name))`)
 
 All cascade on delete. **RLS enabled** on every table:
 - profiles: any authenticated user may **read** usernames (for the planned competition), owner can update.
-- workouts/exercises/sets and routines/routine_exercises: **owner-only** on every operation (checks `auth.uid()` up the parent chain).
+- workouts/exercises/sets, routines/routine_exercises and exercises library: **owner-only** on every operation (checks `auth.uid()` up the parent chain).
 
 See `docs/SUPABASE.md` for applying migrations and the RLS reference.
 
@@ -112,6 +135,14 @@ and supports pause/resume from a header button (`startedAt`/`accumulated` model)
 `useRoutines()` (in `lib/routines.ts`) is the source of truth for editable
 routine days. It seeds the 5 defaults on first fetch and refreshes on the
 `ligera:routines-changed` event; every routine CRUD must dispatch that event.
+
+`useExercises()` (in `lib/exercises.ts`) is the source of truth for the per-user
+exercise library. It seeds the 25 defaults (with muscle groups) on first fetch and
+refreshes on the `ligera:exercises-changed` event. Renames go through the
+`rename_exercise` RPC, which propagates to `routine_exercises` and
+`workout_exercises`. `buildPickerOptions(library, extraNames)` builds the picker
+list (library ∪ logged/routine names), falling back to `exerciseOptions` while the
+library is still empty.
 
 ## Conventions
 
@@ -149,3 +180,9 @@ routine days. It seeds the 5 defaults on first fetch and refreshes on the
 - `shouldProgress(workouts, name, repsMax)` → true when the last session hit the
   top of the target rep range on every set (progressive overload hint).
 - `exerciseNameOptions(workouts)` → includes old logged names so they persist in pickers.
+- `exerciseProgress(workouts, name)` → last session date + sets, kg delta vs the
+  previous session, and a PR flag (rendered on exercise cards).
+- `muscleGroupFor(name, overrides)` (`lib/muscles.ts`) → muscle group via seeded
+  map → keyword heuristic → library override, else `Otros`.
+- `muscleGroupStats` / `groupVolumeByWorkout` (`lib/stats.ts`) → per-group volume
+  (kg×reps) and hard-set counts for the Progress "By muscle group" view.

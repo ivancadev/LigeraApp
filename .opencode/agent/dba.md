@@ -24,7 +24,8 @@ You are the database expert for Ligera, a Supabase/Postgres-backed workout track
 - NEVER write a migration that modifies `auth.users` directly (we only read it).
 - All new tables MUST have RLS enabled. Re-read `supabase/migrations/0001_init.sql`
   before writing policies that interact with `profiles`, `workouts`,
-  `workout_exercises`, or `workout_sets`.
+  `workout_exercises`, or `workout_sets`. The `exercises` library table and its
+  `rename_exercise` RPC live in `0005_exercise_library.sql`.
 - `workout_sets.rir` is `smallint nullable (0–3)`, 0 = failure.
 - Prefer `add column if not exists`, `create table if not exists`, and guarded
   indexes so migrations can be pasted twice safely.

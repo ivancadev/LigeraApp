@@ -1,10 +1,12 @@
 'use client'
 
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { Flag, Plus, X } from 'lucide-react'
 import type { DraftExercise, DraftSet } from '@/lib/workout-data'
 import { updateWorkout, useWorkouts } from '@/lib/data'
-import { fmtDuration } from '@/lib/stats'
+import { exerciseProgress, fmtDuration } from '@/lib/stats'
+import { ensureExercise, renameExercise, setMuscleGroup, useExercises, buildPickerOptions } from '@/lib/exercises'
+import { useUserId } from '@/lib/auth'
 import { ExerciseCard } from '@/components/exercise-card'
 import { ExercisePicker } from '@/components/exercise-picker'
 
@@ -30,6 +32,8 @@ export function EditWorkoutScreen({
   onClose: () => void
 }) {
   const workouts = useWorkouts()
+  const exercises = useExercises()
+  const userId = useUserId()
   const workout = workouts.find((w) => w.id === workoutId)
   const seededFor = useRef<string | null>(null)
   const [draft, setDraft] = useState<DraftExercise[] | null>(null)
@@ -37,6 +41,15 @@ export function EditWorkoutScreen({
   const [confirming, setConfirming] = useState(false)
   const [saving, setSaving] = useState(false)
   const [flash, setFlash] = useState<{ kind: 'ok' | 'error'; text: string } | null>(null)
+
+  const pickerOptions = useMemo(
+    () =>
+      buildPickerOptions(
+        exercises,
+        workouts.flatMap((w) => w.exercises.map((ex) => ex.name)),
+      ),
+    [exercises, workouts],
+  )
 
   useEffect(() => {
     if (!workout || seededFor.current === workout.id) return
@@ -62,8 +75,34 @@ export function EditWorkoutScreen({
 
   function addExercise(name: string) {
     if (!draft || draft.some((ex) => ex.name === name)) return
+    if (userId) {
+      ensureExercise(userId, name).catch((e) =>
+        console.error('Failed to add exercise to library', e),
+      )
+    }
     setDraft((prev) => [...(prev ?? []), { id: uid('e'), name, sets: [newSet()] }])
     setPickerOpen(false)
+  }
+
+  function renameExerciseEverywhere(oldName: string, newName: string) {
+    const trimmed = newName.trim()
+    if (!trimmed || trimmed === oldName) return
+    renameExercise(oldName, trimmed)
+      .then(() =>
+        setDraft((prev) =>
+          prev ? prev.map((ex) => (ex.name === oldName ? { ...ex, name: trimmed } : ex)) : prev,
+        ),
+      )
+      .catch((e) => {
+        const msg = (e as { message?: string } | null)?.message
+        setFlash({ kind: 'error', text: msg ? `Rename failed: ${msg}` : 'Rename failed.' })
+      })
+  }
+
+  function changeMuscleGroup(id: string, group: Parameters<typeof setMuscleGroup>[1]) {
+    setMuscleGroup(id, group).catch((e) =>
+      console.error('Failed to set muscle group', e),
+    )
   }
 
   async function commit() {
@@ -194,7 +233,10 @@ export function EditWorkoutScreen({
               <ExerciseCard
                 key={ex.id}
                 exercise={ex}
-                lastNote={null}
+                progress={exerciseProgress(
+                  workouts.filter((w) => w.id !== workoutId),
+                  ex.name,
+                )}
                 onToggleSet={(setId) =>
                   updateExercise(ex.id, (cur) => ({
                     ...cur,
@@ -232,7 +274,13 @@ export function EditWorkoutScreen({
 
         {pickerOpen && (
           <div className="mt-4">
-            <ExercisePicker onAdd={addExercise} onClose={() => setPickerOpen(false)} />
+            <ExercisePicker
+              options={pickerOptions}
+              onAdd={addExercise}
+              onClose={() => setPickerOpen(false)}
+              onRename={renameExerciseEverywhere}
+              onSetMuscle={changeMuscleGroup}
+            />
           </div>
         )}
 

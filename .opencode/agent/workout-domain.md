@@ -13,7 +13,12 @@ Ivar's 5-day advanced split (all exercise names and targets in **Spanish**).
 - 25 programmed exercises in `lib/workout-data.ts::exerciseOptions`; 5 routine days
   in `defaultRoutineDays` (Torso Fuerza, Pierna Fuerza, Empuje, Tirón, Pierna
   Volumen). This constant only **seeds** a user's account; the editable copies live
-  in Postgres (`lib/routines.ts` → `routines` / `routine_exercises`).
+  in Postgres (`lib/routines.ts` → `routines` / `routine_exercises`,
+  `lib/exercises.ts` → `exercises` library).
+- Muscle groups live in `lib/muscles.ts`: `EXERCISE_MUSCLE` maps the 25 seeded
+  exercises, `muscleGroupFor(name, overrides)` adds a keyword heuristic and
+  library override, else `Otros`. Progress aggregates volume (kg×reps) and hard
+  sets per group (`muscleGroupStats`, `groupVolumeByWorkout` in `lib/stats.ts`).
 - Every template exercise has: `sets`, `repsMin`, `repsMax`, `rir` (string target),
   `bodyweight?`. `targetText()` renders e.g. `4 × 5–7 · RIR 1.5–2`. (No rest timer
   anymore — restart/rest-seconds logic was removed.)
@@ -21,7 +26,11 @@ Ivar's 5-day advanced split (all exercise names and targets in **Spanish**).
   programmed at RIR 0, compounds at RIR 1–2.
 - Estimated 1RM uses the **Epley** formula `kg * (1 + reps/30)`.
 - `shouldProgress()` — every set of the last session hit `repsMax` → suggest +2.5 kg.
-- Bodyweight exercises (kg 0) skip the weight-progression hint.
+- `exerciseProgress()` — last session sets + kg delta vs previous session + PR flag.
+- Bodyweight exercises (kg 0) skip the weight-progression hint and add 0 volume
+  (they still count as hard sets).
+- Follow the spec-first flow: read `docs/constitution.md`, then the relevant
+  `specs/NNN-*/` before changing domain logic.
 
 ## Hard rules
 

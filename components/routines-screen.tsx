@@ -1,8 +1,8 @@
 'use client'
 
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import { CalendarRange, Check, ChevronDown, Pencil, Plus, Trash2, X } from 'lucide-react'
-import { exerciseOptions, targetText, type RoutineExercise } from '@/lib/workout-data'
+import { targetText, type RoutineExercise } from '@/lib/workout-data'
 import {
   addRoutineExercise,
   createRoutine,
@@ -12,7 +12,16 @@ import {
   updateRoutineExercise,
   useRoutines,
 } from '@/lib/routines'
+import { useWorkouts } from '@/lib/data'
+import {
+  buildPickerOptions,
+  ensureExercise,
+  renameExercise,
+  setMuscleGroup,
+  useExercises,
+} from '@/lib/exercises'
 import { useUserId } from '@/lib/auth'
+import { ExercisePicker } from '@/components/exercise-picker'
 import { cn } from '@/lib/utils'
 
 const EXERCISE_DEFAULTS = { sets: 3, repsMin: 8, repsMax: 12, rir: '1', note: '' }
@@ -31,6 +40,8 @@ function startEdit(ex: RoutineExercise & { id: string }) {
 
 export function RoutinesScreen() {
   const routines = useRoutines()
+  const exercises = useExercises()
+  const workouts = useWorkouts()
   const userId = useUserId()
   const [expandedId, setExpandedId] = useState<string | null>(null)
   const [creating, setCreating] = useState(false)
@@ -39,7 +50,6 @@ export function RoutinesScreen() {
   const [renameValue, setRenameValue] = useState('')
   const [confirmRoutineId, setConfirmRoutineId] = useState<string | null>(null)
   const [addingToId, setAddingToId] = useState<string | null>(null)
-  const [customName, setCustomName] = useState('')
   const [editing, setEditing] = useState<{
     id: string
     name: string
@@ -49,9 +59,21 @@ export function RoutinesScreen() {
     rir: string
     note: string
   } | null>(null)
+  const [originalName, setOriginalName] = useState<string | null>(null)
   const [confirmExerciseId, setConfirmExerciseId] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
+
+  const pickerOptions = useMemo(
+    () =>
+      buildPickerOptions(
+        exercises,
+        routines
+          .flatMap((r) => r.exercises.map((ex) => ex.name))
+          .concat(workouts.flatMap((w) => w.exercises.map((ex) => ex.name))),
+      ),
+    [exercises, routines, workouts],
+  )
 
   async function run(fn: () => Promise<void>) {
     if (!userId) return
@@ -91,9 +113,9 @@ export function RoutinesScreen() {
   function addExercise(routineId: string, name: string) {
     if (!name.trim() || busy) return
     run(async () => {
+      if (userId) await ensureExercise(userId, name.trim())
       await addRoutineExercise(routineId, { ...EXERCISE_DEFAULTS, name: name.trim() })
       setAddingToId(null)
-      setCustomName('')
     })
   }
 
@@ -108,8 +130,12 @@ export function RoutinesScreen() {
     const name = editing.name.trim()
     if (!name) return
     run(async () => {
+      if (originalName && name !== originalName) {
+        await renameExercise(originalName, name)
+      } else if (userId) {
+        await ensureExercise(userId, name)
+      }
       await updateRoutineExercise(editing.id, {
-        name,
         sets,
         repsMin,
         repsMax,
@@ -117,6 +143,19 @@ export function RoutinesScreen() {
         note: editing.note,
       })
       setEditing(null)
+      setOriginalName(null)
+    })
+  }
+
+  function changeMuscleGroup(id: string, group: Parameters<typeof setMuscleGroup>[1]) {
+    run(async () => {
+      await setMuscleGroup(id, group)
+    })
+  }
+
+  function renameExerciseEverywhere(oldName: string, newName: string) {
+    run(async () => {
+      await renameExercise(oldName, newName)
     })
   }
 
@@ -304,7 +343,10 @@ export function RoutinesScreen() {
                                   value={editing}
                                   busy={busy}
                                   onChange={setEditing}
-                                  onCancel={() => setEditing(null)}
+                                  onCancel={() => {
+                                    setEditing(null)
+                                    setOriginalName(null)
+                                  }}
                                   onSave={submitExerciseEdit}
                                 />
                               ) : (
@@ -313,7 +355,10 @@ export function RoutinesScreen() {
                                   exId={ex.id}
                                   confirmDelete={confirmExerciseId === ex.id}
                                   busy={busy}
-                                  onEdit={() => setEditing(startEdit(ex))}
+                                  onEdit={() => {
+                                    setEditing(startEdit(ex))
+                                    setOriginalName(ex.name)
+                                  }}
                                   onDelete={() =>
                                     run(async () => {
                                       await deleteRoutineExercise(ex.id)
@@ -330,15 +375,14 @@ export function RoutinesScreen() {
                       )}
 
                       {addingToId === routine.id ? (
-                        <ExerciseAddPicker
+                        <ExercisePicker
+                          options={pickerOptions}
                           onAdd={(name) => addExercise(routine.id, name)}
-                          customName={customName}
-                          onCustomName={setCustomName}
                           onClose={() => {
                             setAddingToId(null)
-                            setCustomName('')
                           }}
-                          busy={busy}
+                          onRename={renameExerciseEverywhere}
+                          onSetMuscle={changeMuscleGroup}
                         />
                       ) : (
                         <button
@@ -427,66 +471,6 @@ function ExerciseRow({
             <Trash2 className="size-3.5" />
           </button>
         )}
-      </div>
-    </div>
-  )
-}
-
-function ExerciseAddPicker({
-  onAdd,
-  customName,
-  onCustomName,
-  onClose,
-  busy,
-}: {
-  onAdd: (name: string) => void
-  customName: string
-  onCustomName: (v: string) => void
-  onClose: () => void
-  busy: boolean
-}) {
-  return (
-    <div className="mt-2 rounded-xl border border-border bg-secondary/40 p-3">
-      <div className="flex items-center justify-between pb-2">
-        <p className="text-xs font-semibold text-foreground">Pick an exercise</p>
-        <button
-          type="button"
-          onClick={onClose}
-          aria-label="Close picker"
-          className="rounded-md p-1 text-muted-foreground transition-colors hover:text-foreground"
-        >
-          <X className="size-3.5" />
-        </button>
-      </div>
-      <div className="flex flex-wrap gap-1.5">
-        {exerciseOptions.map((opt) => (
-          <button
-            key={opt}
-            type="button"
-            onClick={() => onAdd(opt)}
-            disabled={busy}
-            className="rounded-full border border-border bg-secondary px-2.5 py-1 text-[11px] font-semibold text-foreground transition-colors hover:border-primary/50 hover:bg-muted disabled:opacity-50"
-          >
-            {opt}
-          </button>
-        ))}
-      </div>
-      <div className="mt-2.5 flex items-center gap-2">
-        <input
-          value={customName}
-          onChange={(e) => onCustomName(e.target.value)}
-          onKeyDown={(e) => e.key === 'Enter' && customName.trim() && onAdd(customName.trim())}
-          placeholder="Custom exercise name"
-          className="h-8 flex-1 rounded-lg border border-border bg-secondary px-2.5 text-xs text-foreground outline-none placeholder:text-muted-foreground focus:border-primary/60"
-        />
-        <button
-          type="button"
-          onClick={() => customName.trim() && onAdd(customName.trim())}
-          disabled={!customName.trim() || busy}
-          className="h-8 rounded-lg bg-primary px-3 text-xs font-semibold text-primary-foreground transition-opacity hover:opacity-90 disabled:pointer-events-none disabled:opacity-40"
-        >
-          Add
-        </button>
       </div>
     </div>
   )

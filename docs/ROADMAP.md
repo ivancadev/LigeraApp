@@ -43,7 +43,7 @@ Update this file every time a feature ships to keep it accurate.
 - PWA: installable manifest, service worker (network-first navigation),
   generated icons, registration in the root layout.
 
-### Editable routines + atomic saves + faster input (current iteration)
+### Editable routines + atomic saves + faster input (previous iteration)
 - **Fixed saving**: workouts now save atomically via `log_workout` RPC (one
   transaction), and `useWorkouts` logs errors instead of failing silently.
   Root cause of "no se guarda" was most likely an unapplied migration — apply
@@ -59,6 +59,26 @@ Update this file every time a feature ships to keep it accurate.
   text, RIR, notes) stays on the cards — routine `note` now visible.
 - **Faster weight entry**: `NumberStepper` center value is now a direct text
   input (`inputMode="decimal"`) and the `+ / −` buttons repeat on long-press.
+
+### Spec-first constitution + 4 UX upgrades (current iteration)
+- **Constitution adopted** (`docs/constitution.md`): the absolute source of truth;
+  spec-first workflow (`constitution → specs/NNN/spec.md → plan.md → tasks.md →
+  code`) documented in `AGENTS.md`. Templates in `specs/0000-template/`.
+- **Spec 001 — Progression summary per exercise**: exercise cards now show the date
+  and full set list of the last session (`Last (Mar 12): 40×8 · 40×8 · 37.5×7`)
+  plus a trend chip (`↑ +2.5 kg` / `↓ -2.5 kg` / `PR`). Also shown in the edit screen.
+- **Spec 002 — Exercise library**: new per-user `exercises` table (migration
+  `0005_exercise_library.sql`, owner-only RLS), seeded from the 25 defaults with
+  muscle groups. Pickers list library + logged names; custom exercises persist and
+  appear in every picker. `rename_exercise` RPC propagates a rename to routines and
+  history. Management UI (rename + muscle group) inside the picker.
+- **Spec 003 — Lock completed sets**: a completed set renders kg/reps as static
+  text with a lock glyph; steppers, RIR and delete are inert until unlocked
+  (tap the check again). Prevents accidental edits while swiping.
+- **Spec 004 — Muscle-group progression**: Progress gains a `By exercise | By
+  muscle group` toggle. `lib/muscles.ts` maps exercises to groups (seeded map +
+  keyword heuristic + library override). Volume (kg×reps) and hard-set count
+  aggregate per group, so seated + standing calf combine under `Gemelos`.
 
 ## Decisions (and why)
 

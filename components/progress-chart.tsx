@@ -11,19 +11,33 @@ import {
 } from 'recharts'
 import type { ProgressPoint } from '@/lib/stats'
 
-function ChartTooltip({ active, payload }: { active?: boolean; payload?: any[] }) {
+function ChartTooltip({
+  active,
+  payload,
+  unit,
+}: {
+  active?: boolean
+  payload?: any[]
+  unit: string
+}) {
   if (!active || !payload?.length) return null
   return (
     <div className="rounded-lg border border-border bg-popover px-3 py-2 shadow-xl">
       <p className="font-mono text-base font-semibold text-foreground">
-        {payload[0].value} kg
+        {payload[0].value} {unit}
       </p>
       <p className="text-xs text-muted-foreground">{payload[0].payload.label}</p>
     </div>
   )
 }
 
-export function ProgressChart({ data }: { data: ProgressPoint[] }) {
+export function ProgressChart({
+  data,
+  unit = 'kg',
+}: {
+  data: ProgressPoint[]
+  unit?: string
+}) {
   if (data.length === 0) {
     return (
       <div className="flex h-56 w-full items-center justify-center rounded-xl border border-dashed border-border text-sm text-muted-foreground">
@@ -32,7 +46,7 @@ export function ProgressChart({ data }: { data: ProgressPoint[] }) {
     )
   }
 
-  const values = data.map((d) => d.oneRm)
+  const values = data.map((d) => d.value)
   const min = Math.floor((Math.min(...values) - 8) / 10) * 10
   const max = Math.ceil((Math.max(...values) + 6) / 10) * 10
 
@@ -62,10 +76,13 @@ export function ProgressChart({ data }: { data: ProgressPoint[] }) {
             width={40}
             tickFormatter={(v) => `${v}`}
           />
-          <Tooltip content={<ChartTooltip />} cursor={{ stroke: 'var(--color-border)' }} />
+          <Tooltip
+            content={<ChartTooltip unit={unit} />}
+            cursor={{ stroke: 'var(--color-border)' }}
+          />
           <Area
             type="monotone"
-            dataKey="oneRm"
+            dataKey="value"
             stroke="var(--color-chart-1)"
             strokeWidth={2.5}
             fill="url(#rmFill)"

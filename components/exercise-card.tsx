@@ -1,9 +1,13 @@
 'use client'
 
-import { Check, Plus, Trash2, X } from 'lucide-react'
+import { Check, Lock, Plus, Trash2, X } from 'lucide-react'
 import type { DraftExercise, DraftSet } from '@/lib/workout-data'
+import type { ExerciseProgress } from '@/lib/stats'
+import { fmtShort } from '@/lib/stats'
 import { cn } from '@/lib/utils'
 import { NumberStepper } from '@/components/number-stepper'
+
+const nf = new Intl.NumberFormat('en-US')
 
 const RIR_ORDER = [0, 1, 2, 3] as const
 
@@ -23,7 +27,7 @@ function cycleRir(value: number | null | undefined): number | null {
 
 export function ExerciseCard({
   exercise,
-  lastNote,
+  progress,
   onToggleSet,
   onChangeSet,
   onSetRir,
@@ -32,7 +36,7 @@ export function ExerciseCard({
   onRemoveExercise,
 }: {
   exercise: DraftExercise
-  lastNote: string | null
+  progress?: ExerciseProgress | null
   onToggleSet: (setId: string) => void
   onChangeSet: (setId: string, patch: Partial<DraftSet>) => void
   onSetRir: (setId: string, rir: number | null) => void
@@ -56,7 +60,34 @@ export function ExerciseCard({
             </p>
           )}
           {exercise.note && <p className="mt-1 text-xs text-muted-foreground">{exercise.note}</p>}
-          {lastNote && <p className="mt-1 text-sm text-muted-foreground">{lastNote}</p>}
+          {progress?.last && (
+            <div className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1">
+              {progress.deltaKg != null && progress.deltaKg !== 0 && (
+                <span
+                  className={cn(
+                    'rounded-full px-2 py-0.5 text-[10px] font-bold tabular-nums',
+                    progress.deltaKg > 0
+                      ? 'bg-primary/12 text-primary'
+                      : 'bg-destructive/10 text-destructive',
+                  )}
+                >
+                  {progress.deltaKg > 0 ? '↑ +' : '↓ '}
+                  {nf.format(progress.deltaKg)} kg
+                </span>
+              )}
+              {progress.isPr && (
+                <span className="rounded-full bg-amber-500/15 px-2 py-0.5 text-[10px] font-bold text-amber-400">
+                  PR
+                </span>
+              )}
+              <p className="min-w-0 text-xs text-muted-foreground">
+                <span className="font-semibold text-foreground/80">
+                  Last ({fmtShort(progress.last.date)}):
+                </span>{' '}
+                {progress.last.sets.map((s) => `${s.kg}×${s.reps}`).join(' · ')}
+              </p>
+            </div>
+          )}
         </div>
         <div className="flex shrink-0 items-center gap-1.5">
           <span className="rounded-full bg-primary/12 px-3 py-1 text-xs font-semibold text-primary">
@@ -90,64 +121,102 @@ export function ExerciseCard({
             >
               {i + 1}
             </span>
-            <div className="min-w-0 flex-1">
-              <p className="mb-1 text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
-                kg
-              </p>
-              <NumberStepper
-                value={set.kg}
-                step={2.5}
-                min={0}
-                decimals={1}
-                onChange={(kg) => onChangeSet(set.id, { kg })}
-              />
-            </div>
-            <div className="min-w-0 flex-1">
-              <p className="mb-1 text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
-                reps
-              </p>
-              <NumberStepper
-                value={set.reps}
-                step={1}
-                min={0}
-                decimals={0}
-                onChange={(reps) => onChangeSet(set.id, { reps })}
-              />
-            </div>
+
+            {set.done ? (
+              <div className="flex min-w-0 flex-1 items-center gap-3">
+                <span className="font-mono text-sm font-semibold tabular-nums text-foreground">
+                  {set.kg}
+                  <span className="ml-0.5 text-[10px] font-medium text-muted-foreground">kg</span>
+                </span>
+                <span className="font-mono text-sm font-semibold tabular-nums text-foreground">
+                  {set.reps}
+                  <span className="ml-0.5 text-[10px] font-medium text-muted-foreground">reps</span>
+                </span>
+              </div>
+            ) : (
+              <>
+                <div className="min-w-0 flex-1">
+                  <p className="mb-1 text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
+                    kg
+                  </p>
+                  <NumberStepper
+                    value={set.kg}
+                    step={2.5}
+                    min={0}
+                    decimals={1}
+                    onChange={(kg) => onChangeSet(set.id, { kg })}
+                  />
+                </div>
+                <div className="min-w-0 flex-1">
+                  <p className="mb-1 text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
+                    reps
+                  </p>
+                  <NumberStepper
+                    value={set.reps}
+                    step={1}
+                    min={0}
+                    decimals={0}
+                    onChange={(reps) => onChangeSet(set.id, { reps })}
+                  />
+                </div>
+              </>
+            )}
+
             <div className="flex shrink-0 flex-col items-center gap-1.5">
-              <button
-                type="button"
-                onClick={() => onSetRir(set.id, cycleRir(set.rir))}
-                aria-label={`Cycle RIR for set ${i + 1}`}
-                className={cn(
-                  'rounded-md px-1.5 py-0.5 text-[10px] font-bold tabular-nums transition-colors',
-                  set.rir != null ? RIR_CLASSES[set.rir] : 'bg-secondary text-muted-foreground/70',
-                )}
-              >
-                {set.rir != null ? `RIR${set.rir}` : 'RIR'}
-              </button>
-              <button
-                type="button"
-                onClick={() => onToggleSet(set.id)}
-                aria-pressed={set.done}
-                aria-label={`Mark set ${i + 1} ${set.done ? 'incomplete' : 'complete'}`}
-                className={cn(
-                  'flex size-9 items-center justify-center rounded-lg border transition-all',
-                  set.done
-                    ? 'border-primary bg-primary text-primary-foreground'
-                    : 'border-border bg-secondary text-muted-foreground hover:border-primary/60 hover:text-foreground',
-                )}
-              >
-                <Check className="size-4" strokeWidth={3} />
-              </button>
-              <button
-                type="button"
-                onClick={() => onRemoveSet(set.id)}
-                aria-label={`Remove set ${i + 1}`}
-                className="rounded-md p-1 text-muted-foreground/60 transition-colors hover:text-destructive"
-              >
-                <Trash2 className="size-3.5" />
-              </button>
+              {set.done ? (
+                <>
+                  {set.rir != null && (
+                    <span
+                      className={cn(
+                        'rounded-md px-1.5 py-0.5 text-[10px] font-bold tabular-nums',
+                        RIR_CLASSES[set.rir],
+                      )}
+                    >
+                      RIR{set.rir}
+                    </span>
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => onToggleSet(set.id)}
+                    aria-pressed={set.done}
+                    aria-label={`Set ${i + 1} complete, locked. Tap to unlock and edit.`}
+                    className="flex size-9 items-center justify-center rounded-lg border border-primary bg-primary text-primary-foreground transition-all"
+                  >
+                    <Lock className="size-4" strokeWidth={2.5} />
+                  </button>
+                </>
+              ) : (
+                <>
+                  <button
+                    type="button"
+                    onClick={() => onSetRir(set.id, cycleRir(set.rir))}
+                    aria-label={`Cycle RIR for set ${i + 1}`}
+                    className={cn(
+                      'rounded-md px-1.5 py-0.5 text-[10px] font-bold tabular-nums transition-colors',
+                      set.rir != null ? RIR_CLASSES[set.rir] : 'bg-secondary text-muted-foreground/70',
+                    )}
+                  >
+                    {set.rir != null ? `RIR${set.rir}` : 'RIR'}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => onToggleSet(set.id)}
+                    aria-pressed={set.done}
+                    aria-label={`Mark set ${i + 1} complete`}
+                    className="flex size-9 items-center justify-center rounded-lg border border-border bg-secondary text-muted-foreground transition-all hover:border-primary/60 hover:text-foreground"
+                  >
+                    <Check className="size-4" strokeWidth={3} />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => onRemoveSet(set.id)}
+                    aria-label={`Remove set ${i + 1}`}
+                    className="rounded-md p-1 text-muted-foreground/60 transition-colors hover:text-destructive"
+                  >
+                    <Trash2 className="size-3.5" />
+                  </button>
+                </>
+              )}
             </div>
           </li>
         ))}

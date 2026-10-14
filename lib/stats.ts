@@ -1,4 +1,5 @@
 import { exerciseOptions } from '@/lib/workout-data'
+import { muscleGroupFor, type MuscleGroup, type MuscleOverrides } from '@/lib/muscles'
 import type { LoggedSet, Workout } from '@/lib/data'
 
 export const RANGES = ['1M', '3M', '6M', 'ALL'] as const
@@ -19,7 +20,7 @@ export function epley1Rm(kg: number, reps: number): number {
   return Math.round(kg * (1 + reps / 30))
 }
 
-function fmtShort(iso: string): string {
+export function fmtShort(iso: string): string {
   const d = new Date(iso)
   return d.toLocaleDateString('en-US', { month: 'short', day: '2-digit' })
 }
@@ -34,7 +35,7 @@ export function fmtDuration(seconds: number): string {
 export type ProgressPoint = {
   date: string
   label: string
-  oneRm: number
+  value: number
 }
 
 export function exerciseNameOptions(workouts: Workout[]): string[] {
@@ -60,10 +61,54 @@ export function lastBestSet(workouts: Workout[], name: string): LoggedSet | null
   return last
 }
 
-export function lastSetNote(workouts: Workout[], name: string): string | null {
-  const last = lastBestSet(workouts, name)
-  if (!last) return null
-  return `Last time: ${last.kg} kg × ${last.reps}`
+export type SessionSummary = { date: string; sets: LoggedSet[] }
+
+export type ExerciseProgress = {
+  last: SessionSummary | null
+  deltaKg: number | null
+  isPr: boolean
+  sessions: number
+}
+
+function sessionsFor(workouts: Workout[], name: string): SessionSummary[] {
+  const sessions: SessionSummary[] = []
+  for (const w of workouts) {
+    const ex = w.exercises.find((e) => e.name === name)
+    if (!ex || ex.sets.length === 0) continue
+    sessions.push({ date: w.date, sets: ex.sets })
+  }
+  return sessions.sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime())
+}
+
+function best1RmOf(sets: LoggedSet[]): LoggedSet | null {
+  let best: LoggedSet | null = null
+  for (const s of sets) {
+    if (!best || epley1Rm(s.kg, s.reps) > epley1Rm(best.kg, best.reps)) best = s
+  }
+  return best
+}
+
+export function exerciseProgress(workouts: Workout[], name: string): ExerciseProgress {
+  const sessions = sessionsFor(workouts, name)
+  if (sessions.length === 0) return { last: null, deltaKg: null, isPr: false, sessions: 0 }
+
+  const last = sessions[sessions.length - 1]
+  const best = best1RmOf(last.sets)
+
+  let deltaKg: number | null = null
+  if (sessions.length >= 2) {
+    const prevBest = best1RmOf(sessions[sessions.length - 2].sets)
+    if (best && prevBest) deltaKg = Math.round((best.kg - prevBest.kg) * 10) / 10
+  }
+
+  let allTimeBest = 0
+  for (const session of sessions) {
+    const b = best1RmOf(session.sets)
+    if (b) allTimeBest = Math.max(allTimeBest, epley1Rm(b.kg, b.reps))
+  }
+  const isPr = sessions.length >= 2 && best != null && best.kg > 0 && epley1Rm(best.kg, best.reps) >= allTimeBest
+
+  return { last, deltaKg, isPr, sessions: sessions.length }
 }
 
 export function shouldProgress(workouts: Workout[], name: string, targetRepsMax: number): boolean {
@@ -89,9 +134,64 @@ export function bestPerWorkout(workouts: Workout[], name: string): ProgressPoint
     for (const s of ex.sets) {
       if (epley1Rm(s.kg, s.reps) > epley1Rm(best.kg, best.reps)) best = s
     }
-    points.push({ date: w.date, label: fmtShort(w.date), oneRm: epley1Rm(best.kg, best.reps) })
+    points.push({ date: w.date, label: fmtShort(w.date), value: epley1Rm(best.kg, best.reps) })
   }
   return points.sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime())
+}
+
+export type GroupPoint = { date: string; label: string; value: number }
+
+export type GroupSummary = {
+  group: MuscleGroup
+  volume: number
+  sets: number
+  lastDate: string | null
+}
+
+export function groupVolumeByWorkout(
+  workouts: Workout[],
+  group: MuscleGroup,
+  overrides?: MuscleOverrides,
+): GroupPoint[] {
+  const points: GroupPoint[] = []
+  for (const w of workouts) {
+    let volume = 0
+    let trained = false
+    for (const ex of w.exercises) {
+      if (ex.sets.length === 0) continue
+      if (muscleGroupFor(ex.name, overrides) !== group) continue
+      trained = true
+      for (const s of ex.sets) volume += s.kg * s.reps
+    }
+    if (trained) points.push({ date: w.date, label: fmtShort(w.date), value: Math.round(volume) })
+  }
+  return points.sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime())
+}
+
+export function muscleGroupStats(
+  workouts: Workout[],
+  overrides?: MuscleOverrides,
+): GroupSummary[] {
+  const map = new Map<MuscleGroup, GroupSummary>()
+  for (const w of workouts) {
+    for (const ex of w.exercises) {
+      if (ex.sets.length === 0) continue
+      const group = muscleGroupFor(ex.name, overrides)
+      let entry = map.get(group)
+      if (!entry) {
+        entry = { group, volume: 0, sets: 0, lastDate: null }
+        map.set(group, entry)
+      }
+      for (const s of ex.sets) {
+        entry.volume += s.kg * s.reps
+        entry.sets += 1
+      }
+      if (!entry.lastDate || new Date(w.date).getTime() > new Date(entry.lastDate).getTime()) {
+        entry.lastDate = w.date
+      }
+    }
+  }
+  return [...map.values()].sort((a, b) => b.volume - a.volume || b.sets - a.sets)
 }
 
 export function filterByRange<T extends { date: string }>(points: T[], range: Range): T[] {

@@ -60,9 +60,28 @@ Editable per-user routine templates + atomic workout save:
 > Note: like `0001`, the `create policy` statements are not re-runnable. Run each
 > migration file exactly once — matching how `0001`/`0002` were applied.
 
+### `0004_edit_workout.sql`
+
+`update_logged_workout(workout_id, elapsed, exercises jsonb)` — a `security definer`
+RPC that re-checks ownership, optionally overrides `elapsed_seconds`, then replaces
+the workout's exercises/sets in **one transaction**, preserving the workout id and
+date. `updateWorkout` in `lib/data.ts` calls it; `EditWorkoutScreen` drives it.
+
+### `0005_exercise_library.sql`
+
+Per-user exercise library + rename propagation:
+
+- `exercises` (user_id, name, muscle_group, position), RLS **owner-only** on every
+  operation, unique `(user_id, lower(name))`. Seeded from the 25 defaults on first
+  fetch (`lib/exercises.ts::ensureSeeded`). `useExercises()` is the source of truth
+  and refreshes on the `ligera:exercises-changed` event.
+- `rename_exercise(p_old, p_new)` — a `security definer` RPC that atomically
+  rewrites the name in `routine_exercises`, `workout_exercises` and `exercises`,
+  scoped to `auth.uid()`. Raises on empty name or unique-name conflict.
+
 ## Row Level Security reference
 
-| operation      | profiles                        | workouts / exercises / sets, routines / routine_exercises |
+| operation      | profiles                        | workouts / exercises / sets, routines / routine_exercises, exercises |
 | -------------- | ------------------------------- | ------------------------------------ |
 | `select`       | any authenticated user          | owner only                           |
 | `insert`       | — (trigger on signup)           | owner only (`user_id` / parent chain)|

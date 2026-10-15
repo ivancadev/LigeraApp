@@ -7,6 +7,7 @@ export type SessionState = {
   draft: DraftExercise[]
   startedAt: number | null
   accumulated: number
+  name: string | null
 }
 
 function isSet(value: unknown): value is DraftSet {
@@ -45,6 +46,7 @@ export function loadSession(userId: string | null | undefined): SessionState | n
       draft,
       startedAt: typeof parsed.startedAt === 'number' ? parsed.startedAt : null,
       accumulated: typeof parsed.accumulated === 'number' ? parsed.accumulated : 0,
+      name: typeof parsed.name === 'string' ? parsed.name : null,
     }
   } catch {
     return null

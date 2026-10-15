@@ -39,6 +39,7 @@ export function WorkoutScreen({ onOpenRoutines }: { onOpenRoutines: () => void }
   const [flash, setFlash] = useState<{ kind: 'ok' | 'error'; text: string } | null>(null)
   const [startedAt, setStartedAt] = useState<number | null>(null)
   const [accumulated, setAccumulated] = useState(0)
+  const [sessionName, setSessionName] = useState<string | null>(null)
   const [nowTick, setNowTick] = useState(() => Date.now())
   const hydrated = useRef(false)
   const workouts = useWorkouts()
@@ -76,15 +77,16 @@ export function WorkoutScreen({ onOpenRoutines }: { onOpenRoutines: () => void }
         setDraft(saved.draft)
         setStartedAt(saved.startedAt)
         setAccumulated(saved.accumulated)
+        setSessionName(saved.name)
       }
       return
     }
     if (draft.length === 0) {
       clearSession()
     } else {
-      saveSession({ userId, draft, startedAt, accumulated })
+      saveSession({ userId, draft, startedAt, accumulated, name: sessionName })
     }
-  }, [userId, draft, startedAt, accumulated])
+  }, [userId, draft, startedAt, accumulated, sessionName])
 
   const elapsed = startedAt == null
     ? accumulated
@@ -114,10 +116,10 @@ export function WorkoutScreen({ onOpenRoutines }: { onOpenRoutines: () => void }
     setDraft((prev) => prev.map((ex) => (ex.id === id ? updater(ex) : ex)))
   }
 
-  function addExercise(name: string) {
+  function addExercise(name: string, muscleGroup?: Parameters<typeof ensureExercise>[2]) {
     if (draft.some((ex) => ex.name === name)) return
     if (userId) {
-      ensureExercise(userId, name).catch((e) =>
+      ensureExercise(userId, name, muscleGroup).catch((e) =>
         console.error('Failed to add exercise to library', e),
       )
     }
@@ -153,6 +155,7 @@ export function WorkoutScreen({ onOpenRoutines }: { onOpenRoutines: () => void }
 
   function startDay(day: RoutineDay) {
     if (draft.length === 0 && startedAt == null) startTimer()
+    if (sessionName == null) setSessionName(day.title)
     setDraft((prev) => {
       const existing = new Set(prev.map((ex) => ex.name))
       const fresh: DraftExercise[] = []
@@ -194,6 +197,7 @@ export function WorkoutScreen({ onOpenRoutines }: { onOpenRoutines: () => void }
     setDraft([])
     setStartedAt(null)
     setAccumulated(0)
+    setSessionName(null)
     setDiscardConfirm(false)
     setPickerOpen(false)
     setRoutineOpen(false)
@@ -209,6 +213,7 @@ export function WorkoutScreen({ onOpenRoutines }: { onOpenRoutines: () => void }
         id: uid('w'),
         date: new Date().toISOString(),
         elapsedSeconds: elapsed,
+        name: sessionName,
         exercises: draft
           .filter((ex) => ex.sets.length > 0)
           .map((ex) => ({
@@ -220,6 +225,7 @@ export function WorkoutScreen({ onOpenRoutines }: { onOpenRoutines: () => void }
       setDraft([])
       setStartedAt(null)
       setAccumulated(0)
+      setSessionName(null)
       setPickerOpen(false)
       setRoutineOpen(false)
       clearSession()

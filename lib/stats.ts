@@ -1,5 +1,13 @@
 import { exerciseOptions } from '@/lib/workout-data'
-import { muscleGroupFor, type MuscleGroup, type MuscleOverrides } from '@/lib/muscles'
+import {
+  DISPLAY_GROUPS,
+  MUSCLE_GROUPS,
+  ROLLUP,
+  muscleGroupFor,
+  type DisplayGroup,
+  type MuscleGroup,
+  type MuscleOverrides,
+} from '@/lib/muscles'
 import type { LoggedSet, Workout } from '@/lib/data'
 
 export const RANGES = ['1M', '3M', '6M', 'ALL'] as const
@@ -142,24 +150,29 @@ export function bestPerWorkout(workouts: Workout[], name: string): ProgressPoint
 export type GroupPoint = { date: string; label: string; value: number }
 
 export type GroupSummary = {
-  group: MuscleGroup
+  group: DisplayGroup
   volume: number
   sets: number
   lastDate: string | null
 }
 
+function membersOf(group: DisplayGroup): MuscleGroup[] {
+  return ROLLUP[group] ?? [group as MuscleGroup]
+}
+
 export function groupVolumeByWorkout(
   workouts: Workout[],
-  group: MuscleGroup,
+  group: DisplayGroup,
   overrides?: MuscleOverrides,
 ): GroupPoint[] {
+  const members = new Set(membersOf(group))
   const points: GroupPoint[] = []
   for (const w of workouts) {
     let volume = 0
     let trained = false
     for (const ex of w.exercises) {
       if (ex.sets.length === 0) continue
-      if (muscleGroupFor(ex.name, overrides) !== group) continue
+      if (!members.has(muscleGroupFor(ex.name, overrides))) continue
       trained = true
       for (const s of ex.sets) volume += s.kg * s.reps
     }
@@ -173,15 +186,16 @@ export function muscleGroupStats(
   overrides?: MuscleOverrides,
 ): GroupSummary[] {
   const map = new Map<MuscleGroup, GroupSummary>()
+  for (const group of MUSCLE_GROUPS) {
+    map.set(group, { group, volume: 0, sets: 0, lastDate: null })
+  }
+
   for (const w of workouts) {
     for (const ex of w.exercises) {
       if (ex.sets.length === 0) continue
       const group = muscleGroupFor(ex.name, overrides)
-      let entry = map.get(group)
-      if (!entry) {
-        entry = { group, volume: 0, sets: 0, lastDate: null }
-        map.set(group, entry)
-      }
+      const entry = map.get(group)
+      if (!entry) continue
       for (const s of ex.sets) {
         entry.volume += s.kg * s.reps
         entry.sets += 1
@@ -191,7 +205,19 @@ export function muscleGroupStats(
       }
     }
   }
-  return [...map.values()].sort((a, b) => b.volume - a.volume || b.sets - a.sets)
+
+  const rollup: GroupSummary = { group: 'Pierna', volume: 0, sets: 0, lastDate: null }
+  for (const member of ROLLUP.Pierna) {
+    const entry = map.get(member)
+    if (!entry) continue
+    rollup.volume += entry.volume
+    rollup.sets += entry.sets
+    if (entry.lastDate && (!rollup.lastDate || new Date(entry.lastDate) > new Date(rollup.lastDate))) {
+      rollup.lastDate = entry.lastDate
+    }
+  }
+
+  return DISPLAY_GROUPS.map((group) => (group === 'Pierna' ? rollup : map.get(group)!))
 }
 
 export function filterByRange<T extends { date: string }>(points: T[], range: Range): T[] {

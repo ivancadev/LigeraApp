@@ -34,7 +34,8 @@ constitution.md  →  specs/NNN-feature/spec.md  →  plan.md  →  tasks.md  �
 - The constitution changes only by explicit, user-approved amendment.
 
 Shipped specs: `001-progression-summary`, `002-exercise-library`,
-`003-lock-completed-sets`, `004-muscle-group-progress`.
+`003-lock-completed-sets`, `004-muscle-group-progress`,
+`005-history-routine-name`, `006-muscle-groups` (proposed: `007-ai-coach`).
 
 ## Stack
 
@@ -77,7 +78,7 @@ lib/
     client.ts     browser Supabase client (singleton)
     server.ts     server client via cookies
     middleware.ts updateSession helper consumed by root proxy.ts
-supabase/migrations/   SQL migrations (0001_init, 0002_rir, 0003_routines, 0004_edit_workout, 0005_exercise_library)
+supabase/migrations/   SQL migrations (0001_init, 0002_rir, 0003_routines, 0004_edit_workout, 0005_exercise_library, 0006_workout_name)
 scripts/generate-icons.mjs  pure-Node PNG icon generator (no deps)
 public/           manifest.json, sw.js, icons/
 docs/             constitution.md, ROADMAP.md, SUPABASE.md
@@ -90,7 +91,7 @@ Screens are interchangeable views rendered inside `app/page.tsx`, switched by
 ## Data model (Postgres via Supabase)
 
 - `profiles` — user_id (unique → auth.users), username. Auto-created by trigger on signup.
-- `workouts` — user_id, date, elapsed_seconds
+- `workouts` — user_id, date, elapsed_seconds, **name text nullable (snapshot of the routine day / null for manual → UI shows `Entrenamiento libre`)**
 - `workout_exercises` — workout_id (FK), name, position
 - `workout_sets` — exercise_id (FK), kg numeric(6,1), reps int, position, **rir smallint nullable (0–3)**
 - `routines` — user_id, title, position (editable routine days, seeded per user)
@@ -131,6 +132,8 @@ via `lib/session.ts` (key `ligera:session`, keyed per user) on every change, so 
 survives tab switches and reloads; it is cleared on save or discard. The workout
 timer auto-starts when the first exercise is added, shows `00:00:00` beforehand,
 and supports pause/resume from a header button (`startedAt`/`accumulated` model).
+The draft also carries the routine-day `name` snapshot (set by `startDay`, `null`
+after manual starts); it is saved on the workout and shown in History.
 
 `useRoutines()` (in `lib/routines.ts`) is the source of truth for editable
 routine days. It seeds the 5 defaults on first fetch and refreshes on the
@@ -184,5 +187,13 @@ library is still empty.
   previous session, and a PR flag (rendered on exercise cards).
 - `muscleGroupFor(name, overrides)` (`lib/muscles.ts`) → muscle group via seeded
   map → keyword heuristic → library override, else `Otros`.
+- `DISPLAY_GROUPS` / `ROLLUP` (`lib/muscles.ts`) → what the Progress group view
+  lists; `Pierna` is a display-only rollup of Cuádriceps+Isquiotibiales+Glúteos+
+  Gemelos (never assigned to an exercise). `isRecognizedGroup()` drives the
+  picker's "which group?" prompt for unknown names.
 - `muscleGroupStats` / `groupVolumeByWorkout` (`lib/stats.ts`) → per-group volume
-  (kg×reps) and hard-set counts for the Progress "By muscle group" view.
+  (kg×reps) and hard-set counts for the Progress "By muscle group" view; both
+  return/accept every display group (empty ones show `No sets yet`) and expand the
+  `Pierna` rollup. Adding a new exercise via `ExercisePicker` asks for a muscle
+  group when the name is unrecognized (`ensureExercise(userId, name, muscleGroup)`).
+- History shows `workout.name` (routine-day snapshot) or `Entrenamiento libre`.

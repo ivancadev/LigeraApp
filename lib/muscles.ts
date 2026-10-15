@@ -14,6 +14,37 @@ export const MUSCLE_GROUPS = [
 
 export type MuscleGroup = (typeof MUSCLE_GROUPS)[number]
 
+// Leg work is tracked across several detailed groups; 'Pierna' is a
+// display-only rollup that combines them (never assigned to an exercise).
+export const LEG_SUBGROUPS = [
+  'Cuádriceps',
+  'Isquiotibiales',
+  'Glúteos',
+  'Gemelos',
+] as const satisfies readonly MuscleGroup[]
+
+export const ROLLUP: Record<string, MuscleGroup[]> = {
+  Pierna: [...LEG_SUBGROUPS],
+}
+
+// What the Progress "By muscle group" list and selector render, in order.
+export const DISPLAY_GROUPS = [
+  'Pecho',
+  'Espalda',
+  'Hombros',
+  'Bíceps',
+  'Tríceps',
+  'Cuádriceps',
+  'Isquiotibiales',
+  'Glúteos',
+  'Gemelos',
+  'Pierna',
+  'Core',
+  'Otros',
+] as const
+
+export type DisplayGroup = (typeof DISPLAY_GROUPS)[number]
+
 export const EXERCISE_MUSCLE: Record<string, MuscleGroup> = {
   'Press de Banca': 'Pecho',
   'Remo Apoyado en Pecho': 'Espalda',
@@ -80,4 +111,10 @@ export function muscleGroupFor(
     if (kw.test.test(norm)) return kw.group
   }
   return 'Otros'
+}
+
+// True when the name resolves to a real muscle (map or keyword), i.e. it would
+// not land in the 'Otros' bucket. Used by the picker to decide whether to ask.
+export function isRecognizedGroup(name: string, overrides?: MuscleOverrides): boolean {
+  return muscleGroupFor(name, overrides) !== 'Otros'
 }

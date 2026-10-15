@@ -21,6 +21,7 @@ export type Workout = {
   id: string
   date: string
   elapsedSeconds: number
+  name?: string | null
   exercises: LoggedExercise[]
 }
 
@@ -28,6 +29,7 @@ type WorkoutRow = {
   id: string
   date: string
   elapsed_seconds: number
+  name: string | null
   workout_exercises: {
     id: string
     name: string
@@ -46,7 +48,7 @@ export function fetchWorkouts(userId: string): Promise<Workout[]> {
   return supabase
     .from('workouts')
     .select(
-      'id, date, elapsed_seconds, workout_exercises(id, name, position, workout_sets(kg, reps, rir, position))',
+      'id, date, elapsed_seconds, name, workout_exercises(id, name, position, workout_sets(kg, reps, rir, position))',
     )
     .eq('user_id', userId)
     .order('date', { ascending: true })
@@ -57,6 +59,7 @@ export function fetchWorkouts(userId: string): Promise<Workout[]> {
         id: row.id,
         date: row.date,
         elapsedSeconds: row.elapsed_seconds,
+        name: row.name,
         exercises: [...row.workout_exercises]
           .sort((a, b) => a.position - b.position)
           .map((ex) => ({
@@ -81,6 +84,7 @@ export async function saveWorkout(userId: string, workout: Workout) {
     p_user_id: userId,
     p_date: workout.date,
     p_elapsed: workout.elapsedSeconds,
+    p_name: workout.name ?? null,
     p_exercises: workout.exercises.map((ex) => ({
       name: ex.name,
       sets: ex.sets.map((s) => ({ kg: s.kg, reps: s.reps, rir: s.rir ?? null })),
@@ -94,11 +98,13 @@ export async function updateWorkout(
   workoutId: string,
   elapsedSeconds: number | null,
   exercises: { name: string; sets: LoggedSet[] }[],
+  name: string | null = null,
 ) {
   const supabase = createClient()
   const { error } = await supabase.rpc('update_logged_workout', {
     p_workout_id: workoutId,
     p_elapsed: elapsedSeconds,
+    p_name: name,
     p_exercises: exercises.map((ex) => ({
       name: ex.name,
       sets: ex.sets.map((s) => ({ kg: s.kg, reps: s.reps, rir: s.rir ?? null })),

@@ -17,8 +17,10 @@ Ivar's 5-day advanced split (all exercise names and targets in **Spanish**).
   `lib/exercises.ts` → `exercises` library).
 - Muscle groups live in `lib/muscles.ts`: `EXERCISE_MUSCLE` maps the 25 seeded
   exercises, `muscleGroupFor(name, overrides)` adds a keyword heuristic and
-  library override, else `Otros`. Progress aggregates volume (kg×reps) and hard
-  sets per group (`muscleGroupStats`, `groupVolumeByWorkout` in `lib/stats.ts`).
+  library override, else `Otros`. `DISPLAY_GROUPS` adds a display-only `Pierna`
+  rollup (Cuádriceps+Isquiotibiales+Glúteos+Gemelos) — never assigned to an
+  exercise. Progress aggregates volume (kg×reps) and hard sets per group
+  (`muscleGroupStats`, `groupVolumeByWorkout` in `lib/stats.ts`).
 - Every template exercise has: `sets`, `repsMin`, `repsMax`, `rir` (string target),
   `bodyweight?`. `targetText()` renders e.g. `4 × 5–7 · RIR 1.5–2`. (No rest timer
   anymore — restart/rest-seconds logic was removed.)

@@ -1,8 +1,8 @@
 'use client'
 
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import { Check, Pencil, X } from 'lucide-react'
-import { MUSCLE_GROUPS, type MuscleGroup } from '@/lib/muscles'
+import { MUSCLE_GROUPS, isRecognizedGroup, type MuscleGroup } from '@/lib/muscles'
 import type { PickerOption } from '@/lib/exercises'
 import { cn } from '@/lib/utils'
 
@@ -14,12 +14,13 @@ export function ExercisePicker({
   onSetMuscle,
 }: {
   options: PickerOption[]
-  onAdd: (name: string) => void
+  onAdd: (name: string, muscleGroup?: MuscleGroup) => void
   onClose: () => void
   onRename?: (oldName: string, newName: string) => void
   onSetMuscle?: (id: string, group: MuscleGroup | null) => void
 }) {
   const [custom, setCustom] = useState('')
+  const [customGroup, setCustomGroup] = useState<MuscleGroup | ''>('')
   const [managing, setManaging] = useState(false)
   const [editingName, setEditingName] = useState<string | null>(null)
   const [editValue, setEditValue] = useState('')
@@ -27,9 +28,21 @@ export function ExercisePicker({
 
   const canManage = Boolean(onRename || onSetMuscle)
 
+  const overrides = useMemo(() => {
+    const map = new Map<string, MuscleGroup>()
+    for (const o of options) if (o.muscleGroup) map.set(o.name, o.muscleGroup)
+    return map
+  }, [options])
+
+  const trimmed = custom.trim()
+  const isExisting = options.some((o) => o.name.toLowerCase() === trimmed.toLowerCase())
+  const needsGroup = trimmed.length > 0 && !isExisting && !isRecognizedGroup(trimmed, overrides)
+
   function submit() {
-    const name = custom.trim()
-    if (name) onAdd(name)
+    if (!trimmed) return
+    onAdd(trimmed, needsGroup ? customGroup || 'Otros' : undefined)
+    setCustom('')
+    setCustomGroup('')
   }
 
   function startEdit(opt: PickerOption) {
@@ -154,6 +167,32 @@ export function ExercisePicker({
         </div>
       )}
 
+      {needsGroup && (
+        <div className="mx-4 mt-3 rounded-xl border border-primary/30 bg-primary/8 p-3">
+          <p className="text-xs font-semibold text-foreground">Which muscle group?</p>
+          <p className="mt-0.5 text-[11px] text-muted-foreground">
+            {`We couldn't detect "${trimmed}". Pick a group.`}
+          </p>
+          <div className="mt-2 flex flex-wrap gap-1.5">
+            {MUSCLE_GROUPS.map((g) => (
+              <button
+                key={g}
+                type="button"
+                onClick={() => setCustomGroup(g)}
+                className={cn(
+                  'rounded-full border px-2.5 py-1 text-[11px] font-semibold transition-colors',
+                  (customGroup || 'Otros') === g
+                    ? 'border-primary bg-primary text-primary-foreground'
+                    : 'border-border bg-secondary text-foreground hover:border-primary/50',
+                )}
+              >
+                {g}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
       <div className="flex items-center gap-2 px-4 pb-4 pt-3">
         <input
           value={custom}
@@ -165,7 +204,7 @@ export function ExercisePicker({
         <button
           type="button"
           onClick={submit}
-          disabled={!custom.trim()}
+          disabled={!trimmed}
           className="h-9 rounded-lg bg-primary px-3.5 text-sm font-semibold text-primary-foreground transition-opacity hover:opacity-90 disabled:pointer-events-none disabled:opacity-40"
         >
           Add

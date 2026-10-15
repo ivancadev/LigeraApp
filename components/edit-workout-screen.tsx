@@ -73,10 +73,10 @@ export function EditWorkoutScreen({
     setDraft((prev) => (prev ? prev.map((ex) => (ex.id === id ? updater(ex) : ex)) : prev))
   }
 
-  function addExercise(name: string) {
+  function addExercise(name: string, muscleGroup?: Parameters<typeof ensureExercise>[2]) {
     if (!draft || draft.some((ex) => ex.name === name)) return
     if (userId) {
-      ensureExercise(userId, name).catch((e) =>
+      ensureExercise(userId, name, muscleGroup).catch((e) =>
         console.error('Failed to add exercise to library', e),
       )
     }
@@ -119,6 +119,7 @@ export function EditWorkoutScreen({
             name: ex.name,
             sets: ex.sets.map((s) => ({ kg: s.kg, reps: s.reps, rir: s.rir ?? null })),
           })),
+        workout?.name ?? null,
       )
       setFlash({ kind: 'ok', text: 'Workout updated' })
       onDone()
@@ -142,18 +143,23 @@ export function EditWorkoutScreen({
               Edit workout
             </span>
             {workout && (
-              <p className="mt-1 truncate text-sm font-semibold text-foreground">
-                {new Date(workout.date).toLocaleDateString('en-US', {
-                  month: 'short',
-                  day: 'numeric',
-                })}{' '}
-                ·{' '}
-                {new Date(workout.date).toLocaleTimeString('en-US', {
-                  hour: '2-digit',
-                  minute: '2-digit',
-                })}{' '}
-                · {fmtDuration(workout.elapsedSeconds)}
-              </p>
+              <>
+                <p className="mt-1 truncate text-sm font-semibold text-foreground">
+                  {workout.name ?? 'Entrenamiento libre'}
+                </p>
+                <p className="mt-0.5 truncate text-xs text-muted-foreground">
+                  {new Date(workout.date).toLocaleDateString('en-US', {
+                    month: 'short',
+                    day: 'numeric',
+                  })}{' '}
+                  ·{' '}
+                  {new Date(workout.date).toLocaleTimeString('en-US', {
+                    hour: '2-digit',
+                    minute: '2-digit',
+                  })}{' '}
+                  · {fmtDuration(workout.elapsedSeconds)}
+                </p>
+              </>
             )}
           </div>
 

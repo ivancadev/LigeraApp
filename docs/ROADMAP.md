@@ -31,7 +31,7 @@ Update this file every time a feature ships to keep it accurate.
 - New **History** tab (3rd) with expandable per-workout detail, duration, set/volume counts.
 - Exercise cards show the target string.
 
-### Delete in History + RIR + smart rest + auto-progression + PWA (current iteration)
+### Delete in History + RIR + smart rest + auto-progression + PWA (shipped)
 - Delete a whole workout, or a single exercise inside an expanded past workout,
   from History with confirmation dialogs.
 - RIR per set: nullable `rir` column on `workout_sets` (migration `0002_rir.sql`),
@@ -60,7 +60,7 @@ Update this file every time a feature ships to keep it accurate.
 - **Faster weight entry**: `NumberStepper` center value is now a direct text
   input (`inputMode="decimal"`) and the `+ / −` buttons repeat on long-press.
 
-### Spec-first constitution + 4 UX upgrades (current iteration)
+### Spec-first constitution + 4 UX upgrades (previous iteration)
 - **Constitution adopted** (`docs/constitution.md`): the absolute source of truth;
   spec-first workflow (`constitution → specs/NNN/spec.md → plan.md → tasks.md →
   code`) documented in `AGENTS.md`. Templates in `specs/0000-template/`.
@@ -79,6 +79,19 @@ Update this file every time a feature ships to keep it accurate.
   muscle group` toggle. `lib/muscles.ts` maps exercises to groups (seeded map +
   keyword heuristic + library override). Volume (kg×reps) and hard-set count
   aggregate per group, so seated + standing calf combine under `Gemelos`.
+
+### History routine names + full muscle-group list (current iteration)
+- **Spec 005 — Routine name in history**: sessions store a text snapshot of the
+  routine day (`workouts.name`, migration `0006_workout_name.sql`); History shows
+  the name as the primary line and falls back to `Entrenamiento libre` for manual
+  sessions. Renaming/deleting the routine never rewrites past sessions.
+- **Spec 006 — Muscle groups**: the Progress group view now lists **every** group
+  (empty ones show `No sets yet / —`) and adds a display-only `Pierna` rollup that
+  combines Cuádriceps+Isquiotibiales+Glúteos+Gemelos for volume, sets, trend and
+  chart. Adding an exercise whose group can't be detected now reveals an inline
+  "which muscle group?" picker before it is added.
+- **Spec 007 — AI coach**: drafted as a future spec (LLM classification of unknown
+  exercises via a server-only key + plateau suggestions). Not implemented.
 
 ## Decisions (and why)
 
@@ -109,3 +122,5 @@ Update this file every time a feature ships to keep it accurate.
 - Deload reminder (the PDF calls for deload every 6–8 weeks).
 - Google OAuth sign-in (email/password is in place).
 - Reorder exercises / routine days in the Routines tab.
+- **AI coach** (spec 007): LLM classification of unknown exercise names via a
+  server-only key, plus variation suggestions when an exercise plateaus.

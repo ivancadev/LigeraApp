@@ -110,10 +110,10 @@ export function RoutinesScreen() {
     })
   }
 
-  function addExercise(routineId: string, name: string) {
+  function addExercise(routineId: string, name: string, muscleGroup?: Parameters<typeof ensureExercise>[2]) {
     if (!name.trim() || busy) return
     run(async () => {
-      if (userId) await ensureExercise(userId, name.trim())
+      if (userId) await ensureExercise(userId, name.trim(), muscleGroup)
       await addRoutineExercise(routineId, { ...EXERCISE_DEFAULTS, name: name.trim() })
       setAddingToId(null)
     })
@@ -377,7 +377,7 @@ export function RoutinesScreen() {
                       {addingToId === routine.id ? (
                         <ExercisePicker
                           options={pickerOptions}
-                          onAdd={(name) => addExercise(routine.id, name)}
+                          onAdd={(name, group) => addExercise(routine.id, name, group)}
                           onClose={() => {
                             setAddingToId(null)
                           }}

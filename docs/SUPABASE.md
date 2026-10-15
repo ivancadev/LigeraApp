@@ -79,6 +79,19 @@ Per-user exercise library + rename propagation:
   rewrites the name in `routine_exercises`, `workout_exercises` and `exercises`,
   scoped to `auth.uid()`. Raises on empty name or unique-name conflict.
 
+### `0006_workout_name.sql`
+
+Adds a routine-day snapshot to each session:
+
+- `workouts.name text` (nullable) — the routine day `title` at save time, or `null`
+  for a manual session (UI renders `Entrenamiento libre`). It is a **snapshot**, not
+  an FK, so renaming/deleting the source routine never rewrites history.
+- Recreates `log_workout(…, p_name text default null)` and
+  `update_logged_workout(…, p_name text default null)` to carry the name (the edit
+  RPC keeps the old name when `p_name` is empty). Both functions are dropped and
+  re-created because their signature changes (`create or replace` cannot add a
+  parameter).
+
 ## Row Level Security reference
 
 | operation      | profiles                        | workouts / exercises / sets, routines / routine_exercises, exercises |

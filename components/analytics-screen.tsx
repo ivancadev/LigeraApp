@@ -16,7 +16,7 @@ import {
   type RecordKind,
   type ProgressPoint,
 } from '@/lib/stats'
-import { type MuscleGroup } from '@/lib/muscles'
+import { type DisplayGroup, type MuscleGroup } from '@/lib/muscles'
 import { useExercises } from '@/lib/exercises'
 import { ProgressChart } from '@/components/progress-chart'
 import { cn } from '@/lib/utils'
@@ -85,17 +85,17 @@ export function AnalyticsScreen() {
   const groupSummaries = useMemo(() => muscleGroupStats(workouts, overrides), [workouts, overrides])
   const groupNames = groupSummaries.map((g) => g.group)
   const activeGroup = (
-    groupNames.includes(selectedGroup as MuscleGroup) ? selectedGroup : (groupNames[0] ?? '')
-  ) as MuscleGroup | ''
+    groupNames.includes(selectedGroup as DisplayGroup) ? selectedGroup : (groupNames[0] ?? '')
+  ) as DisplayGroup | ''
   const groupPoints = useMemo(
     () =>
       activeGroup
-        ? filterByRange(groupVolumeByWorkout(workouts, activeGroup as MuscleGroup, overrides), range)
+        ? filterByRange(groupVolumeByWorkout(workouts, activeGroup as DisplayGroup, overrides), range)
         : [],
     [workouts, activeGroup, overrides, range],
   )
   const groupTrends = useMemo(() => {
-    const map = new Map<MuscleGroup, number | null>()
+    const map = new Map<DisplayGroup, number | null>()
     for (const g of groupNames) {
       map.set(g, pctTrend(filterByRange(groupVolumeByWorkout(workouts, g, overrides), range)))
     }
@@ -193,97 +193,103 @@ export function AnalyticsScreen() {
             </p>
           </div>
         ) : mode === 'group' ? (
-          groupNames.length === 0 ? (
-            <div className="flex flex-col items-center gap-2 rounded-2xl border border-dashed border-border px-6 py-14 text-center">
-              <TrendingUp className="size-6 text-muted-foreground" />
-              <p className="text-base font-semibold text-foreground">No muscle data yet</p>
-              <p className="text-sm text-muted-foreground">
-                Log a session and volume per muscle group will show up here.
-              </p>
-            </div>
-          ) : (
-            <>
-              <section className="rounded-2xl border border-border bg-card p-4">
-                <div className="flex items-center justify-between gap-2">
-                  <div>
-                    <p className="text-sm font-semibold text-foreground">{activeGroup} volume</p>
-                    <p className="text-xs text-muted-foreground">
-                      Total kg lifted per logged session
-                    </p>
-                  </div>
-                  <TrendBadge trend={pctTrend(groupPoints)} />
+          <>
+            <section className="rounded-2xl border border-border bg-card p-4">
+              <div className="flex items-center justify-between gap-2">
+                <div>
+                  <p className="text-sm font-semibold text-foreground">{activeGroup} volume</p>
+                  <p className="text-xs text-muted-foreground">
+                    Total kg lifted per logged session
+                  </p>
                 </div>
+                <TrendBadge trend={pctTrend(groupPoints)} />
+              </div>
 
-                <div className="mt-4">
-                  <ProgressChart data={groupPoints} unit="kg" />
-                </div>
+              <div className="mt-4">
+                <ProgressChart data={groupPoints} unit="kg" />
+              </div>
 
-                <div className="mt-3 flex items-center gap-1.5 rounded-xl bg-secondary/50 p-1">
-                  {RANGES.map((r) => (
-                    <button
-                      key={r}
-                      type="button"
-                      onClick={() => setRange(r)}
-                      className={cn(
-                        'flex-1 rounded-lg py-1.5 text-xs font-semibold transition-colors',
-                        range === r
-                          ? 'bg-primary text-primary-foreground'
-                          : 'text-muted-foreground hover:text-foreground',
-                      )}
-                    >
-                      {r}
-                    </button>
-                  ))}
-                </div>
-              </section>
+              <div className="mt-3 flex items-center gap-1.5 rounded-xl bg-secondary/50 p-1">
+                {RANGES.map((r) => (
+                  <button
+                    key={r}
+                    type="button"
+                    onClick={() => setRange(r)}
+                    className={cn(
+                      'flex-1 rounded-lg py-1.5 text-xs font-semibold transition-colors',
+                      range === r
+                        ? 'bg-primary text-primary-foreground'
+                        : 'text-muted-foreground hover:text-foreground',
+                    )}
+                  >
+                    {r}
+                  </button>
+                ))}
+              </div>
+            </section>
 
-              <section className="mt-4">
-                <h2 className="px-1 text-sm font-semibold text-foreground">All muscle groups</h2>
-                <ul className="mt-2.5 flex flex-col gap-2">
-                  {groupSummaries.map((g) => {
-                    const gTrend = groupTrends.get(g.group) ?? null
-                    const isActive = g.group === activeGroup
-                    return (
-                      <li key={g.group}>
-                        <button
-                          type="button"
-                          onClick={() => setSelectedGroup(g.group)}
-                          className={cn(
-                            'flex w-full items-center gap-3 rounded-xl border px-3.5 py-3 text-left transition-colors',
-                            isActive
-                              ? 'border-primary/50 bg-primary/8'
-                              : 'border-border bg-card hover:bg-secondary/50',
-                          )}
-                        >
-                          <div className="min-w-0 flex-1">
-                            <p className="text-sm font-semibold text-foreground">{g.group}</p>
-                            <p className="text-xs text-muted-foreground">
-                              {g.sets} set{g.sets === 1 ? '' : 's'}
-                              {g.lastDate
-                                ? ` · ${new Date(g.lastDate).toLocaleDateString('en-US', {
-                                    month: 'short',
-                                    day: 'numeric',
-                                  })}`
-                                : ''}
-                            </p>
-                          </div>
-                          <div className="flex shrink-0 items-center gap-2">
-                            <span className="font-mono text-sm font-bold tabular-nums text-foreground">
-                              {fmtValue(Math.round(g.volume))}
-                              <span className="ml-0.5 text-[10px] font-medium text-muted-foreground">
-                                kg
-                              </span>
+            <section className="mt-4">
+              <h2 className="px-1 text-sm font-semibold text-foreground">All muscle groups</h2>
+              <ul className="mt-2.5 flex flex-col gap-2">
+                {groupSummaries.map((g) => {
+                  const gTrend = groupTrends.get(g.group) ?? null
+                  const isActive = g.group === activeGroup
+                  const trained = g.sets > 0
+                  return (
+                    <li key={g.group}>
+                      <button
+                        type="button"
+                        onClick={() => setSelectedGroup(g.group)}
+                        className={cn(
+                          'flex w-full items-center gap-3 rounded-xl border px-3.5 py-3 text-left transition-colors',
+                          isActive
+                            ? 'border-primary/50 bg-primary/8'
+                            : 'border-border bg-card hover:bg-secondary/50',
+                        )}
+                      >
+                        <div className="min-w-0 flex-1">
+                          <p
+                            className={cn(
+                              'text-sm font-semibold',
+                              trained ? 'text-foreground' : 'text-muted-foreground',
+                            )}
+                          >
+                            {g.group}
+                          </p>
+                          <p className="text-xs text-muted-foreground">
+                            {trained
+                              ? `${g.sets} set${g.sets === 1 ? '' : 's'}${
+                                  g.lastDate
+                                    ? ` · ${new Date(g.lastDate).toLocaleDateString('en-US', {
+                                        month: 'short',
+                                        day: 'numeric',
+                                      })}`
+                                    : ''
+                                }`
+                              : 'No sets yet'}
+                          </p>
+                        </div>
+                        <div className="flex shrink-0 items-center gap-2">
+                          <span
+                            className={cn(
+                              'font-mono text-sm font-bold tabular-nums',
+                              trained ? 'text-foreground' : 'text-muted-foreground',
+                            )}
+                          >
+                            {trained ? fmtValue(Math.round(g.volume)) : '—'}
+                            <span className="ml-0.5 text-[10px] font-medium text-muted-foreground">
+                              kg
                             </span>
-                            <TrendBadge trend={gTrend} />
-                          </div>
-                        </button>
-                      </li>
-                    )
-                  })}
-                </ul>
-              </section>
-            </>
-          )
+                          </span>
+                          <TrendBadge trend={gTrend} />
+                        </div>
+                      </button>
+                    </li>
+                  )
+                })}
+              </ul>
+            </section>
+          </>
         ) : (
           <>
             <div className="grid grid-cols-3 gap-2.5">

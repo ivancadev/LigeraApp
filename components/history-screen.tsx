@@ -114,12 +114,12 @@ export function HistoryScreen({ onEdit }: { onEdit: (workoutId: string) => void 
                     className="flex min-w-0 flex-1 items-center gap-3 text-left"
                   >
                     <div className="min-w-0 flex-1">
-                      <p className="text-sm font-semibold text-foreground">
-                        {fmtDay(w.date)} · {fmtTime(w.date)}
+                      <p className="truncate text-sm font-semibold text-foreground">
+                        {w.name ?? 'Entrenamiento libre'}
                       </p>
                       <p className="mt-0.5 text-xs text-muted-foreground">
-                        {w.exercises.length} exercise{w.exercises.length === 1 ? '' : 's'} · {sets}{' '}
-                        set{sets === 1 ? '' : 's'} · {nf.format(volume)} kg
+                        {fmtDay(w.date)} · {fmtTime(w.date)} · {w.exercises.length} ex · {sets}{' '}
+                        sets · {nf.format(volume)} kg
                       </p>
                     </div>
                     <span className="shrink-0 font-mono text-xs font-semibold tabular-nums text-muted-foreground">

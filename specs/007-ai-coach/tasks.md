@@ -1,11 +1,15 @@
-# 007 — AI coach (tasks, FUTURE — not scheduled)
+# 007 — AI coach (tasks, SHIPPED — classification only)
 
-- [ ] Confirm scope (classification only, or + plateau coaching)
-- [ ] Choose provider/model + cost ceiling; add env var to `.env.example`
-- [ ] `app/api/classify-exercise/route.ts` (server-only key)
-- [ ] `lib/ai.ts` with timeout + heuristic fallback
-- [ ] Wire the add-exercise flow to try AI before the manual prompt
-- [ ] Plateau helper + dismissible suggestion card
-- [ ] Document privacy (only the exercise name is sent)
-- [ ] `pnpm exec tsc --noEmit`
-- [ ] `pnpm build`
+- [x] Confirm scope: classification only (plateau coaching deferred)
+- [x] Provider: Google Gemini free tier (`gemini-3.1-flash-lite` by default)
+- [x] Migration `0009_ai_requests.sql` (quota table + RPC)
+- [x] `app/api/classify-exercise/route.ts` (server-only key, quota, validation)
+- [x] `lib/ai.ts` with timeout + null fallback
+- [x] Wire the picker to try AI before the manual prompt
+- [x] Document privacy (only the exercise name is sent)
+- [x] `pnpm exec tsc --noEmit`
+- [x] `pnpm build`
+
+## Deferred
+
+- [ ] Plateau helper + dismissible suggestion card (separate feature)

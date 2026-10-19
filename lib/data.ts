@@ -2,6 +2,8 @@
 
 import { useCallback, useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
+import { useUserId } from '@/lib/auth'
+import { clearLoadFailure, reportLoadFailure } from '@/lib/load-failure'
 
 export const WORKOUTS_CHANGED = 'ligera:workouts-changed'
 
@@ -130,47 +132,32 @@ export async function deleteExercise(exerciseId: string) {
 
 export function useWorkouts() {
   const [workouts, setWorkouts] = useState<Workout[]>([])
-  const refresh = useCallback(async (userId: string) => {
+  const userId = useUserId()
+
+  const refresh = useCallback(async (id: string) => {
     try {
-      setWorkouts(await fetchWorkouts(userId))
+      setWorkouts(await fetchWorkouts(id))
+      clearLoadFailure('workouts')
     } catch (e) {
       console.error('Failed to load workouts', e)
-      setWorkouts([])
+      reportLoadFailure('workouts', e, () => refresh(id))
     }
   }, [])
 
   useEffect(() => {
-    const supabase = createClient()
-    let active = true
-
-    const applyUser = (userId: string | null | undefined) => {
-      if (!active || !userId) return
-      refresh(userId)
+    if (!userId) {
+      setWorkouts([])
+      return
     }
+    refresh(userId)
+  }, [userId, refresh])
 
-    supabase.auth.getSession().then(({ data }: { data: { session: { user: { id: string } | null } | null } }) => {
-      applyUser(data.session?.user?.id)
-    })
-
-    const {
-      data: { subscription },
-    } = supabase.auth.onAuthStateChange((_event: string, session: { user: { id: string } | null } | null) => {
-      applyUser(session?.user?.id)
-    })
-
-    const onChanged = () => {
-      supabase.auth
-        .getSession()
-        .then(({ data }: { data: { session: { user: { id: string } | null } | null } }) => applyUser(data.session?.user?.id))
-    }
+  useEffect(() => {
+    if (!userId) return
+    const onChanged = () => refresh(userId)
     window.addEventListener(WORKOUTS_CHANGED, onChanged)
-
-    return () => {
-      active = false
-      subscription.unsubscribe()
-      window.removeEventListener(WORKOUTS_CHANGED, onChanged)
-    }
-  }, [refresh])
+    return () => window.removeEventListener(WORKOUTS_CHANGED, onChanged)
+  }, [userId, refresh])
 
   return workouts
 }

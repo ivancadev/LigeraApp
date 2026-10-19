@@ -57,9 +57,10 @@ export function WorkoutScreen({ onOpenRoutines }: { onOpenRoutines: () => void }
   )
 
   useEffect(() => {
+    if (startedAt == null) return
     const id = setInterval(() => setNowTick(Date.now()), 1000)
     return () => clearInterval(id)
-  }, [])
+  }, [startedAt])
 
   useEffect(() => {
     if (draft.length === 0 && startedAt != null) {
@@ -83,6 +84,7 @@ export function WorkoutScreen({ onOpenRoutines }: { onOpenRoutines: () => void }
     }
     if (draft.length === 0) {
       clearSession()
+      setSessionName(null)
     } else {
       saveSession({ userId, draft, startedAt, accumulated, name: sessionName })
     }
@@ -96,7 +98,6 @@ export function WorkoutScreen({ onOpenRoutines }: { onOpenRoutines: () => void }
   const totalSets = draft.reduce((n, ex) => n + ex.sets.length, 0)
 
   function startTimer() {
-    setAccumulated(0)
     setStartedAt(Date.now())
   }
 

@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useState, useSyncExternalStore } from 'react'
 import type { Session } from '@supabase/supabase-js'
 import { createClient } from '@/lib/supabase/client'
 
@@ -9,40 +9,61 @@ export type Profile = {
   username: string | null
 }
 
-export function useSession() {
-  const [session, setSession] = useState<Session | null>(null)
-  const [loading, setLoading] = useState(true)
+type SessionState = {
+  session: Session | null
+  loading: boolean
+}
 
-  useEffect(() => {
-    const supabase = createClient()
-    let active = true
+const SERVER_STATE: SessionState = { session: null, loading: true }
+let state: SessionState = SERVER_STATE
+let initialized = false
+const listeners = new Set<() => void>()
 
-    supabase.auth.getSession().then(({ data }: { data: { session: Session | null } }) => {
-      if (!active) return
-      setSession(data.session)
-      setLoading(false)
-    })
+function setState(next: SessionState) {
+  state = next
+  for (const listener of listeners) listener()
+}
 
-    const {
-      data: { subscription },
-    } = supabase.auth.onAuthStateChange((_event: string, next: Session | null) => {
-      if (!active) return
-      setSession(next)
-      setLoading(false)
-    })
+function ensureInit() {
+  if (initialized) return
+  initialized = true
+  const supabase = createClient()
+  supabase.auth.getSession().then(({ data }: { data: { session: Session | null } }) => {
+    setState({ session: data.session, loading: false })
+  })
+  supabase.auth.onAuthStateChange((_event: string, next: Session | null) => {
+    setState({ session: next, loading: false })
+  })
+}
 
-    return () => {
-      active = false
-      subscription.unsubscribe()
-    }
-  }, [])
+function subscribe(onChange: () => void) {
+  ensureInit()
+  listeners.add(onChange)
+  return () => {
+    listeners.delete(onChange)
+  }
+}
 
-  return { session, loading }
+function getSnapshot(): SessionState {
+  return state
+}
+
+function getServerSnapshot(): SessionState {
+  return SERVER_STATE
+}
+
+export function useSession(): SessionState {
+  return useSyncExternalStore(subscribe, getSnapshot, getServerSnapshot)
 }
 
 export function useUserId(): string | null {
-  const { session } = useSession()
-  return session?.user.id ?? null
+  return useSession().session?.user.id ?? null
+}
+
+function usernameFromEmail(email: string): string {
+  const local = email.split('@')[0] ?? ''
+  const cleaned = local.replace(/[^a-zA-Z0-9._-]/g, '').slice(0, 24)
+  return cleaned || 'user'
 }
 
 export async function signUpWithEmail(email: string, password: string) {
@@ -51,7 +72,7 @@ export async function signUpWithEmail(email: string, password: string) {
     email,
     password,
     options: {
-      data: { username: email.split('@')[0] },
+      data: { username: usernameFromEmail(email) },
     },
   })
   return {

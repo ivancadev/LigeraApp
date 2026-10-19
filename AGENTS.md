@@ -67,18 +67,19 @@ proxy.ts          root middleware replaced by this proxy (Next 16, refreshed-coo
 components/       client UI screens + shared controls
   ui/             shadcn/ui primitives (button, input, ...)
 lib/
-  auth.ts         useSession, useUserId, useProfile, signUp/signIn/signOut
+  auth.ts         shared session store + useSession/useUserId/useProfile, signUp/signIn/signOut
   data.ts         Workout types, fetchWorkouts, saveWorkout (RPC), deleteWorkout/Exercise, useWorkouts
   routines.ts     editable routine days: fetch/seed, CRUD, useRoutines
   exercises.ts    per-user exercise library: fetch/seed, CRUD, renameExercise (RPC), useExercises, buildPickerOptions
   muscles.ts      muscle groups, exercise→group map, muscleGroupFor
   stats.ts        Epley 1RM, PRs, lastBestSet, exerciseProgress, muscleGroupStats, filters
   workout-data.ts exerciseOptions, defaultRoutineDays (seed), target helpers, DraftSet/DraftExercise
+  load-failure.ts store of load failures + reportLoadFailure/clearLoadFailure (drives DataErrorBanner)
   supabase/
     client.ts     browser Supabase client (singleton)
     server.ts     server client via cookies
     middleware.ts updateSession helper consumed by root proxy.ts
-supabase/migrations/   SQL migrations (0001_init, 0002_rir, 0003_routines, 0004_edit_workout, 0005_exercise_library, 0006_workout_name)
+supabase/migrations/   SQL migrations (0001_init, 0002_rir, 0003_routines, 0004_edit_workout, 0005_exercise_library, 0006_workout_name, 0007_routine_position_integrity, 0008_function_grants)
 scripts/generate-icons.mjs  pure-Node PNG icon generator (no deps)
 public/           manifest.json, sw.js, icons/
 docs/             constitution.md, ROADMAP.md, SUPABASE.md
@@ -94,13 +95,14 @@ Screens are interchangeable views rendered inside `app/page.tsx`, switched by
 - `workouts` — user_id, date, elapsed_seconds, **name text nullable (snapshot of the routine day / null for manual → UI shows `Entrenamiento libre`)**
 - `workout_exercises` — workout_id (FK), name, position
 - `workout_sets` — exercise_id (FK), kg numeric(6,1), reps int, position, **rir smallint nullable (0–3)**
-- `routines` — user_id, title, position (editable routine days, seeded per user)
-- `routine_exercises` — routine_id (FK), name, sets, reps_min, reps_max, rir text, note, bodyweight, position
+- `routines` — user_id, title, position (editable routine days, seeded per user, unique `(user_id, position)`)
+- `routine_exercises` — routine_id (FK), name, sets, reps_min, reps_max, rir text, note, bodyweight, position, unique `(routine_id, position)`
 - `exercises` — user_id, name, muscle_group, position (per-user exercise library, seeded per user, unique `(user_id, lower(name))`)
 
 All cascade on delete. **RLS enabled** on every table:
 - profiles: any authenticated user may **read** usernames (for the planned competition), owner can update.
 - workouts/exercises/sets, routines/routine_exercises and exercises library: **owner-only** on every operation (checks `auth.uid()` up the parent chain).
+- Function `EXECUTE` (migration `0008`): the `log_workout`, `update_logged_workout` and `rename_exercise` RPCs are granted to `authenticated` only (revoked from `public`/`anon`); `handle_new_user` (signup trigger) is granted to `supabase_auth_admin` only. They are `SECURITY DEFINER` and re-check `auth.uid()`.
 
 See `docs/SUPABASE.md` for applying migrations and the RLS reference.
 
@@ -108,9 +110,11 @@ See `docs/SUPABASE.md` for applying migrations and the RLS reference.
 
 - Browser Supabase session stored in cookies via `@supabase/ssr`.
 - `proxy.ts` refreshes the session on route access.
-- `lib/auth.ts` exposes hooks; the anon key in `.env.local` is public by design
-  (never use the service-role key client-side).
-- `app/page.tsx` gates: loading → `AuthScreen` → app.
+- `lib/auth.ts` exposes hooks from a single module-level session store
+  (`useSyncExternalStore`): one `getSession()` + one `onAuthStateChange` shared by
+  every `useSession`/`useUserId` consumer. The anon key in `.env.local` is public
+  by design (never use the service-role key client-side).
+- `app/page.tsx` gates: loading → `AuthScreen` → app, and mounts `<DataErrorBanner />`.
 
 ## Save / refresh model (important)
 
@@ -138,14 +142,20 @@ after manual starts); it is saved on the workout and shown in History.
 `useRoutines()` (in `lib/routines.ts`) is the source of truth for editable
 routine days. It seeds the 5 defaults on first fetch and refreshes on the
 `ligera:routines-changed` event; every routine CRUD must dispatch that event.
+Seeding is **idempotent**: the insert is an upsert with `ignoreDuplicates` backed
+by the `(user_id, position)` / `(routine_id, position)` unique constraints (migration
+`0007`), so two concurrent seeds cannot duplicate a day. New routine days and
+routine exercises take `position = max + 1`.
 
 `useExercises()` (in `lib/exercises.ts`) is the source of truth for the per-user
 exercise library. It seeds the 25 defaults (with muscle groups) on first fetch and
-refreshes on the `ligera:exercises-changed` event. Renames go through the
-`rename_exercise` RPC, which propagates to `routine_exercises` and
-`workout_exercises`. `buildPickerOptions(library, extraNames)` builds the picker
-list (library ∪ logged/routine names), falling back to `exerciseOptions` while the
-library is still empty.
+refreshes on the `ligera:exercises-changed` event. Seeding is also idempotent
+(ignores the `23505` unique violation from `(user_id, lower(name))`). Renames go
+through the `rename_exercise` RPC, which propagates to `routine_exercises` and
+`workout_exercises`; `renameExercise` therefore dispatches the exercises, routines
+and workouts changed events. `buildPickerOptions(library, extraNames)` builds the
+picker list (library ∪ logged/routine names), falling back to `exerciseOptions`
+while the library is still empty.
 
 ## Conventions
 
@@ -157,9 +167,10 @@ library is still empty.
 - Estimated 1RM uses the **Epley** formula: `kg * (1 + reps/30)`.
 - `Intl.NumberFormat('en-US')` for big numbers (kg values keep their own decimals).
 - No code comments unless asked. Keep components small and typed.
-- Migrations live in `supabase/migrations/` but are applied **manually** in the
-  Supabase SQL Editor (no supabase CLI linkage) — a new migration must always be
-  communicated to the user with exact SQL to paste.
+- Migrations live in `supabase/migrations/`, ordered `NNNN_name.sql`. The baseline
+  `0001`–`0006` is recorded in `supabase_migrations.schema_migrations` (there is no
+  supabase CLI linkage). New migrations are applied with the Supabase MCP
+  (`apply_migration`) **and** always communicated to the user with the exact SQL to paste.
 
 ## Deploy
 
@@ -169,10 +180,11 @@ library is still empty.
 
 ## Dotfiles / config
 
-- `opencode.json` at the repo root (schema, MCP servers, no secrets —
-  secrets come in via `{env:VAR}`).
-- `.opencode/agent/*.md` defines specialized subagents (dba, workout-domain,
-  deploy). `.opencode/` is committed.
+- `opencode.json` at the repo root (schema, MCP servers, no secrets — secrets come
+  in via `{env:VAR}`). It wires the remote Supabase MCP `conexion-supabase2`
+  (`https://mcp.supabase.com/mcp?project_ref=…`, OAuth, read-only) used by the dba.
+- `.opencode/agents/*.md` defines specialized subagents (dba, workout-domain,
+  deploy, optimizador). `.opencode/` is committed (its `node_modules` is ignored).
 - `.env.local` holds `SUPABASE_URL` + `SUPABASE_ANON_KEY` and is gitignored.
 - `.env.example` documents every env var an agent/tool may need.
 - After changing opencode config or agents, tell the user to **restart opencode**.

@@ -2,8 +2,12 @@
 
 import { useCallback, useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
+import { useUserId } from '@/lib/auth'
 import { exerciseOptions } from '@/lib/workout-data'
 import { EXERCISE_MUSCLE, type MuscleGroup } from '@/lib/muscles'
+import { clearLoadFailure, reportLoadFailure } from '@/lib/load-failure'
+import { WORKOUTS_CHANGED } from '@/lib/data'
+import { ROUTINES_CHANGED } from '@/lib/routines'
 
 export const EXERCISES_CHANGED = 'ligera:exercises-changed'
 
@@ -51,9 +55,9 @@ function toManaged(row: ExerciseRow): ManagedExercise {
   }
 }
 
-function notifyChanged() {
+function notifyChanged(event: string = EXERCISES_CHANGED) {
   if (typeof window === 'undefined') return
-  window.dispatchEvent(new Event(EXERCISES_CHANGED))
+  window.dispatchEvent(new Event(event))
 }
 
 async function ensureSeeded(userId: string) {
@@ -72,7 +76,7 @@ async function ensureSeeded(userId: string) {
     position: i,
   }))
   const { error: insertError } = await supabase.from('exercises').insert(rows)
-  if (insertError) throw insertError
+  if (insertError && insertError.code !== '23505') throw insertError
 }
 
 export async function fetchExercises(userId: string): Promise<ManagedExercise[]> {
@@ -104,17 +108,24 @@ export async function ensureExercise(
   if (error) throw error
   if ((data ?? []).length > 0) return
 
-  const { count } = await supabase
+  const { data: last, error: lastError } = await supabase
     .from('exercises')
-    .select('id', { count: 'exact', head: true })
+    .select('position')
     .eq('user_id', userId)
+    .order('position', { ascending: false })
+    .limit(1)
+  if (lastError) throw lastError
+  const position = (last?.[0]?.position ?? -1) + 1
   const { error: insertError } = await supabase.from('exercises').insert({
     user_id: userId,
     name: trimmed,
     muscle_group: muscleGroup ?? EXERCISE_MUSCLE[trimmed] ?? null,
-    position: count ?? 0,
+    position,
   })
-  if (insertError) throw insertError
+  if (insertError) {
+    if (insertError.code === '23505') return
+    throw insertError
+  }
   notifyChanged()
 }
 
@@ -128,6 +139,8 @@ export async function renameExercise(oldName: string, newName: string) {
   })
   if (error) throw error
   notifyChanged()
+  notifyChanged(ROUTINES_CHANGED)
+  notifyChanged(WORKOUTS_CHANGED)
 }
 
 export async function setMuscleGroup(id: string, group: MuscleGroup | null) {
@@ -139,53 +152,32 @@ export async function setMuscleGroup(id: string, group: MuscleGroup | null) {
 
 export function useExercises() {
   const [exercises, setExercises] = useState<ManagedExercise[]>([])
-  const refresh = useCallback(async (userId: string) => {
+  const userId = useUserId()
+
+  const refresh = useCallback(async (id: string) => {
     try {
-      setExercises(await fetchExercises(userId))
+      setExercises(await fetchExercises(id))
+      clearLoadFailure('exercises')
     } catch (e) {
       console.error('Failed to load exercises', e)
-      setExercises([])
+      reportLoadFailure('exercises', e, () => refresh(id))
     }
   }, [])
 
   useEffect(() => {
-    const supabase = createClient()
-    let active = true
-
-    const applyUser = (userId: string | null | undefined) => {
-      if (!active || !userId) return
-      refresh(userId)
+    if (!userId) {
+      setExercises([])
+      return
     }
+    refresh(userId)
+  }, [userId, refresh])
 
-    supabase.auth
-      .getSession()
-      .then(({ data }: { data: { session: { user: { id: string } | null } | null } }) =>
-        applyUser(data.session?.user?.id),
-      )
-
-    const {
-      data: { subscription },
-    } = supabase.auth.onAuthStateChange(
-      (_event: string, session: { user: { id: string } | null } | null) => {
-        applyUser(session?.user?.id)
-      },
-    )
-
-    const onChanged = () => {
-      supabase.auth
-        .getSession()
-        .then(({ data }: { data: { session: { user: { id: string } | null } | null } }) =>
-          applyUser(data.session?.user?.id),
-        )
-    }
+  useEffect(() => {
+    if (!userId) return
+    const onChanged = () => refresh(userId)
     window.addEventListener(EXERCISES_CHANGED, onChanged)
-
-    return () => {
-      active = false
-      subscription.unsubscribe()
-      window.removeEventListener(EXERCISES_CHANGED, onChanged)
-    }
-  }, [refresh])
+    return () => window.removeEventListener(EXERCISES_CHANGED, onChanged)
+  }, [userId, refresh])
 
   return exercises
 }

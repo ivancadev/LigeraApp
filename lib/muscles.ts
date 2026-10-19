@@ -1,3 +1,5 @@
+// Grupos asignables a ejercicios. 'Pierna' no está aquí porque solo se usa
+// para agrupar resultados en pantalla.
 export const MUSCLE_GROUPS = [
   'Pecho',
   'Espalda',
@@ -14,8 +16,8 @@ export const MUSCLE_GROUPS = [
 
 export type MuscleGroup = (typeof MUSCLE_GROUPS)[number]
 
-// Leg work is tracked across several detailed groups; 'Pierna' is a
-// display-only rollup that combines them (never assigned to an exercise).
+// El trabajo de pierna se registra en grupos detallados; 'Pierna' solo combina
+// esos grupos al mostrar estadísticas y nunca se asigna directamente.
 export const LEG_SUBGROUPS = [
   'Cuádriceps',
   'Isquiotibiales',
@@ -27,7 +29,7 @@ export const ROLLUP: Record<string, MuscleGroup[]> = {
   Pierna: [...LEG_SUBGROUPS],
 }
 
-// What the Progress "By muscle group" list and selector render, in order.
+// Orden de los grupos que aparecen en el selector y en Progress.
 export const DISPLAY_GROUPS = [
   'Pecho',
   'Espalda',
@@ -45,6 +47,8 @@ export const DISPLAY_GROUPS = [
 
 export type DisplayGroup = (typeof DISPLAY_GROUPS)[number]
 
+// Clasificación explícita de ejercicios conocidos; tiene prioridad sobre
+// las coincidencias aproximadas de KEYWORDS.
 export const EXERCISE_MUSCLE: Record<string, MuscleGroup> = {
   'Press de Banca': 'Pecho',
   'Remo Apoyado en Pecho': 'Espalda',
@@ -73,6 +77,8 @@ export const EXERCISE_MUSCLE: Record<string, MuscleGroup> = {
   'Rueda Abdominal': 'Core',
 }
 
+// Patrones para reconocer ejercicios con nombres no incluidos en el mapa.
+// Si varios patrones coinciden, gana el primero de esta lista.
 const KEYWORDS: { group: MuscleGroup; test: RegExp }[] = [
   { group: 'Gemelos', test: /gemelo|pantorrilla|soleo/ },
   { group: 'Isquiotibiales', test: /femoral|isquio/ },
@@ -80,13 +86,15 @@ const KEYWORDS: { group: MuscleGroup; test: RegExp }[] = [
   { group: 'Cuádriceps', test: /cuadricep|prensa|sentadilla|zancada/ },
   { group: 'Tríceps', test: /triceps|fondo/ },
   { group: 'Bíceps', test: /biceps|curl/ },
-  { group: 'Pecho', test: /banca|pecho|cruce|apertura|press inclinado/ },
+  { group: 'Hombros', test: /militar|hombro|deltoid|elevacion|pajaros|face pull/ },
   { group: 'Espalda', test: /remo|jalon|dominada|dorsal|espalda|pull/ },
-  { group: 'Hombros', test: /militar|hombro|deltoid|elevacion lateral|pajaros|face pull/ },
+  { group: 'Pecho', test: /banca|pecho|cruce|apertura|press inclinado/ },
   { group: 'Core', test: /abdominal|core|plancha|rueda|crunch|oblicuo/ },
 ]
 
 export function normalizeName(name: string): string {
+  // Quita diacríticos y diferencias de mayúsculas para que coincidan nombres
+  // con o sin tildes (por ejemplo, "cuádriceps" y "cuadriceps").
   return name
     .normalize('NFD')
     .replace(/[\u0300-\u036f]/g, '')
@@ -100,6 +108,8 @@ export function muscleGroupFor(
   name: string,
   overrides?: MuscleOverrides,
 ): MuscleGroup {
+  // Se respeta este orden: ajuste del usuario, nombre conocido, palabras clave
+  // y, si no hay coincidencia, el grupo genérico.
   if (overrides) {
     const override = overrides.get(name)
     if (override) return override
@@ -113,8 +123,8 @@ export function muscleGroupFor(
   return 'Otros'
 }
 
-// True when the name resolves to a real muscle (map or keyword), i.e. it would
-// not land in the 'Otros' bucket. Used by the picker to decide whether to ask.
+// Indica si el nombre se reconoce sin acabar en 'Otros'. El selector usa esto
+// para decidir si debe pedir al usuario que elija un grupo muscular.
 export function isRecognizedGroup(name: string, overrides?: MuscleOverrides): boolean {
   return muscleGroupFor(name, overrides) !== 'Otros'
 }

@@ -1,4 +1,5 @@
 import { createClient } from '@/lib/supabase/server'
+import { generateJson, geminiModel } from '@/lib/gemini'
 import { MUSCLE_GROUPS, type MuscleGroup } from '@/lib/muscles'
 
 export const runtime = 'nodejs'
@@ -6,7 +7,6 @@ export const dynamic = 'force-dynamic'
 
 const DEFAULT_MODEL = 'gemini-3.1-flash-lite'
 const DEFAULT_DAILY_LIMIT = 20
-const REQUEST_TIMEOUT_MS = 8000
 const MIN_NAME_LENGTH = 2
 const MAX_NAME_LENGTH = 80
 
@@ -15,19 +15,20 @@ type Classification = {
   confidence: number
 }
 
-type GeminiResponse = {
-  candidates?: {
-    content?: {
-      parts?: { text?: string }[]
-    }
-  }[]
-}
-
 const SYSTEM_PROMPT = `You classify strength-training exercise names into exactly one muscle group.
 The name may be in Spanish, English or a mix.
 Choose only from this closed list: ${MUSCLE_GROUPS.join(', ')}.
 Use "Otros" only when the name gives no useful anatomical clue.
 Return a confidence between 0 and 1.`
+
+const RESPONSE_SCHEMA = {
+  type: 'OBJECT',
+  properties: {
+    muscleGroup: { type: 'STRING', enum: [...MUSCLE_GROUPS] },
+    confidence: { type: 'NUMBER' },
+  },
+  required: ['muscleGroup', 'confidence'],
+}
 
 function isMuscleGroup(value: unknown): value is MuscleGroup {
   return typeof value === 'string' && (MUSCLE_GROUPS as readonly string[]).includes(value)
@@ -48,64 +49,22 @@ function dailyLimit(): number {
 }
 
 async function classifyWithGemini(name: string, apiKey: string): Promise<Classification | null> {
-  const model = process.env.GEMINI_MODEL?.trim() || DEFAULT_MODEL
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent`
+  const parsed = await generateJson<{ muscleGroup?: unknown; confidence?: unknown }>({
+    apiKey,
+    model: geminiModel(DEFAULT_MODEL),
+    system: SYSTEM_PROMPT,
+    prompt: name,
+    schema: RESPONSE_SCHEMA,
+  })
 
-  try {
-    const response = await fetch(url, {
-      method: 'POST',
-      headers: {
-        'content-type': 'application/json',
-        'x-goog-api-key': apiKey,
-      },
-      body: JSON.stringify({
-        systemInstruction: {
-          parts: [{ text: SYSTEM_PROMPT }],
-        },
-        contents: [{ role: 'user', parts: [{ text: name }] }],
-        generationConfig: {
-          responseMimeType: 'application/json',
-          responseSchema: {
-            type: 'OBJECT',
-            properties: {
-              muscleGroup: { type: 'STRING', enum: [...MUSCLE_GROUPS] },
-              confidence: { type: 'NUMBER' },
-            },
-            required: ['muscleGroup', 'confidence'],
-          },
-        },
-      }),
-      signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
-    })
+  if (!parsed || !isMuscleGroup(parsed.muscleGroup)) return null
 
-    if (!response.ok) {
-      console.error('Gemini classification failed', response.status)
-      return null
-    }
+  const confidence =
+    typeof parsed.confidence === 'number' && Number.isFinite(parsed.confidence)
+      ? Math.min(1, Math.max(0, parsed.confidence))
+      : 0.5
 
-    const data = (await response.json()) as GeminiResponse
-    const text = (data.candidates?.[0]?.content?.parts ?? [])
-      .map((part) => part.text ?? '')
-      .join('')
-      .trim()
-    if (!text) return null
-
-    const parsed = JSON.parse(text) as { muscleGroup?: unknown; confidence?: unknown }
-    if (!isMuscleGroup(parsed.muscleGroup)) return null
-
-    const confidence =
-      typeof parsed.confidence === 'number' && Number.isFinite(parsed.confidence)
-        ? Math.min(1, Math.max(0, parsed.confidence))
-        : 0.5
-
-    return { muscleGroup: parsed.muscleGroup, confidence }
-  } catch (error) {
-    console.error(
-      'Gemini classification error',
-      error instanceof Error ? error.message : error,
-    )
-    return null
-  }
+  return { muscleGroup: parsed.muscleGroup, confidence }
 }
 
 export async function POST(request: Request) {
@@ -138,6 +97,7 @@ export async function POST(request: Request) {
 
   const { data: quota, error: quotaError } = await supabase.rpc('consume_ai_quota', {
     p_daily_limit: dailyLimit(),
+    p_kind: 'classify',
   })
   if (quotaError) {
     console.error('AI quota check failed', quotaError.message)

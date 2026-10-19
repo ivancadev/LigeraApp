@@ -1,6 +1,11 @@
 'use client'
 
 import { MUSCLE_GROUPS, type MuscleGroup } from '@/lib/muscles'
+import {
+  ADVICE_SEVERITIES,
+  type CoachSummary,
+  type TrainingAdvice,
+} from '@/lib/coach'
 
 export type Classification = {
   muscleGroup: MuscleGroup
@@ -35,6 +40,36 @@ export async function classifyExercise(name: string): Promise<Classification | n
         : 0.5
 
     return { muscleGroup: data.muscleGroup, confidence }
+  } catch {
+    return null
+  }
+}
+
+export async function fetchAdvice(summary: CoachSummary): Promise<TrainingAdvice | null> {
+  try {
+    const response = await fetch('/api/coach-advice', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(summary),
+      signal: AbortSignal.timeout(TIMEOUT_MS),
+    })
+    if (!response.ok) return null
+
+    const data = (await response.json()) as Record<string, unknown>
+    if (typeof data.severity !== 'string') return null
+    if (!(ADVICE_SEVERITIES as readonly string[]).includes(data.severity)) return null
+    if (typeof data.headline !== 'string' || typeof data.body !== 'string') return null
+
+    const actions = Array.isArray(data.actions)
+      ? data.actions.filter((action): action is string => typeof action === 'string').slice(0, 3)
+      : []
+
+    return {
+      severity: data.severity as TrainingAdvice['severity'],
+      headline: data.headline,
+      body: data.body,
+      actions,
+    }
   } catch {
     return null
   }

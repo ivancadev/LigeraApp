@@ -12,4 +12,4 @@
 
 ## Deferred
 
-- [ ] Plateau helper + dismissible suggestion card (separate feature)
+- [x] Plateau helper + dismissible suggestion card → shipped as `specs/008-ai-training-advice`

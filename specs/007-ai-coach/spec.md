@@ -1,11 +1,12 @@
 # 007 — AI coach: classify unknown exercises (spec, SHIPPED)
 
-**Status:** shipped (classification only; plateau coaching deferred)
+**Status:** shipped (classification only; plateau coaching shipped as spec 008)
 **Owner:** Ivar
 **Constitution refs:** §2.2, §2.5, §3.4, §3.5, §3.10, §3.11
 
-> Scope confirmed with the user: this iteration ships **classification only**.
-> Plateau coaching (below) remains deferred and is **not implemented**.
+> Scope confirmed with the user: this iteration shipped **classification only**.
+> The deferred plateau coaching was delivered separately as
+> `specs/008-ai-training-advice`.
 
 ## Problem / why
 
@@ -36,11 +37,11 @@ the app.
 - **FR6** The feature is opt-in (an explicit `Suggest with AI` button) and
   rate-limited per user per day. ✅
 
-### Deferred (not implemented)
+### Deferred (shipped later as spec 008)
 
 - Plateau detection ("no improvement over N sessions") and a dismissible
-  suggestion card. Revisit as a separate feature; it can be computed
-  client-side so no data leaves the device.
+  suggestion card. Delivered in `specs/008-ai-training-advice` with a
+  client-side signal engine and an opt-in tip on the Workout screen.
 
 ## Acceptance criteria
 
@@ -60,7 +61,8 @@ Gemini and returns a group. The `ai_requests` table stores only `user_id`,
 - Auto-writing routines or renaming exercises.
 - AI-phrased plateau coaching.
 
-## Open questions (for the deferred plateau work)
+## Open questions (resolved by spec 008)
 
-- Whether plateau coaching reuses this route or stays fully client-side.
-- Cost ceiling if the free tier ever changes.
+- Plateau coaching moved to spec 008 (client-side signals + Gemini phrasing).
+- Cost ceiling if the free tier ever changes — mitigated by a shared daily quota
+  and per-day tip caching.

@@ -16,6 +16,7 @@ import { useUserId } from '@/lib/auth'
 import { clearSession, loadSession, saveSession } from '@/lib/session'
 import { ExerciseCard } from '@/components/exercise-card'
 import { ExercisePicker } from '@/components/exercise-picker'
+import { CoachCard } from '@/components/coach-card'
 
 let idCounter = 0
 const uid = (prefix: string) => `${prefix}-${Date.now()}-${idCounter++}`
@@ -338,6 +339,12 @@ export function WorkoutScreen({ onOpenRoutines }: { onOpenRoutines: () => void }
       </header>
 
       <div className="flex-1 overflow-y-auto px-4 py-4 pb-40">
+        {draft.length === 0 && !pickerOpen && !routineOpen && (
+          <div className="mb-4">
+            <CoachCard />
+          </div>
+        )}
+
         {draft.length === 0 && !pickerOpen && !routineOpen ? (
           <div className="flex flex-col items-center gap-4 rounded-2xl border border-dashed border-border px-6 py-12 text-center">
             <Plus className="size-6 text-muted-foreground" />

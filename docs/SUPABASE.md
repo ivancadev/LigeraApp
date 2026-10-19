@@ -94,16 +94,29 @@ Adds a routine-day snapshot to each session:
 
 ### `0009_ai_requests.sql`
 
-Per-user quota for AI exercise classification (spec 007):
+Per-user quota for the AI features (specs 007/008):
 
 - `ai_requests` (`user_id` → `auth.users`, `kind`, `created_at`), RLS enabled.
   Owner-only `select`; **no** direct insert/update/delete policies. The table
-  never stores the exercise name.
-- `consume_ai_quota(p_daily_limit int)` — `security definer` RPC that re-checks
-  `auth.uid()`, counts today's requests (UTC), inserts a row when under the
+  never stores the exercise name or any workout data.
+- `consume_ai_quota(p_daily_limit int, p_kind text default 'classify')` —
+  `security definer` RPC that re-checks `auth.uid()`, counts today's requests
+  (UTC, shared across kinds), inserts a row with the given `kind` when under the
   limit, and returns `{ allowed, remaining }`. It also prunes rows older than
   30 days for that user. `execute` is revoked from `public`/`anon` and granted
   to `authenticated` only.
+
+### `0010_consume_ai_quota_kind.sql`
+
+Generalizes the quota RPC for the training-advice feature (spec 008):
+
+- Drops `consume_ai_quota(integer)` and recreates it as
+  `consume_ai_quota(p_daily_limit integer default 20, p_kind text default 'classify')`
+  (a changed signature requires drop/recreate, not `create or replace`).
+- The daily count remains **shared** between classification and advice; `kind`
+  (`classify` | `advice`) is recorded for traceability only.
+- `execute` is re-revoked from `public`/`anon` and re-granted to
+  `authenticated`/`service_role` on the new signature.
 
 ## Row Level Security reference
 
@@ -126,7 +139,7 @@ All child-table policies resolve ownership through the parent row
 | ----------------------- | -------- | ---------------------------------------- |
 | `SUPABASE_URL`          | yes      | project API URL                          |
 | `SUPABASE_ANON_KEY`     | yes      | browser client (public by design)        |
-| `GEMINI_API_KEY`        | no       | server-only key for AI classification    |
+| `GEMINI_API_KEY`        | no       | server-only key for the AI routes        |
 | `GEMINI_MODEL`          | no       | defaults to `gemini-3.1-flash-lite`      |
 | `AI_DAILY_LIMIT`        | no       | per-user daily AI requests (default 20)  |
 

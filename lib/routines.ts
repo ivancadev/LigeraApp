@@ -2,10 +2,12 @@
 
 import { useCallback, useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
+import { useUserId } from '@/lib/auth'
 import {
   defaultRoutineDays,
   type RoutineExercise,
 } from '@/lib/workout-data'
+import { clearLoadFailure, reportLoadFailure } from '@/lib/load-failure'
 
 export const ROUTINES_CHANGED = 'ligera:routines-changed'
 
@@ -73,31 +75,39 @@ async function ensureSeeded(userId: string) {
   if (error) throw error
   if ((count ?? 0) !== 0) return
 
-  for (let i = 0; i < defaultRoutineDays.length; i++) {
-    const day = defaultRoutineDays[i]
-    const { data: routine, error: dayError } = await supabase
-      .from('routines')
-      .insert({ user_id: userId, title: day.title, position: i })
-      .select('id')
-      .single()
-    if (dayError) throw dayError
-
-    if (day.exercises.length === 0) continue
-    const { error: exError } = await supabase.from('routine_exercises').insert(
-      day.exercises.map((ex, j) => ({
-        routine_id: routine.id,
-        name: ex.name,
-        sets: ex.sets,
-        reps_min: ex.repsMin,
-        reps_max: ex.repsMax,
-        rir: ex.rir,
-        note: ex.note ?? null,
-        bodyweight: ex.bodyweight ?? false,
-        position: j,
-      })),
+  const { error: daysError } = await supabase
+    .from('routines')
+    .upsert(
+      defaultRoutineDays.map((day, i) => ({ user_id: userId, title: day.title, position: i })),
+      { onConflict: 'user_id,position', ignoreDuplicates: true },
     )
-    if (exError) throw exError
-  }
+  if (daysError) throw daysError
+
+  const { data: inserted, error: selectError } = await supabase
+    .from('routines')
+    .select('id, position')
+    .eq('user_id', userId)
+  if (selectError) throw selectError
+
+  const orderedRoutines = [...(inserted ?? [])].sort((a, b) => a.position - b.position)
+  const routineExercises = orderedRoutines.flatMap((routine, i) =>
+    defaultRoutineDays[i].exercises.map((ex, j) => ({
+      routine_id: routine.id,
+      name: ex.name,
+      sets: ex.sets,
+      reps_min: ex.repsMin,
+      reps_max: ex.repsMax,
+      rir: ex.rir,
+      note: ex.note ?? null,
+      bodyweight: ex.bodyweight ?? false,
+      position: j,
+    })),
+  )
+  if (routineExercises.length === 0) return
+  const { error: exError } = await supabase
+    .from('routine_exercises')
+    .upsert(routineExercises, { onConflict: 'routine_id,position', ignoreDuplicates: true })
+  if (exError) throw exError
 }
 
 export async function fetchRoutines(userId: string): Promise<ManagedRoutineDay[]> {
@@ -116,13 +126,17 @@ export async function fetchRoutines(userId: string): Promise<ManagedRoutineDay[]
 
 export async function createRoutine(userId: string, title: string) {
   const supabase = createClient()
-  const { count } = await supabase
+  const { data: last, error: lastError } = await supabase
     .from('routines')
-    .select('id', { count: 'exact', head: true })
+    .select('position')
     .eq('user_id', userId)
+    .order('position', { ascending: false })
+    .limit(1)
+  if (lastError) throw lastError
+  const position = (last?.[0]?.position ?? -1) + 1
   const { error } = await supabase
     .from('routines')
-    .insert({ user_id: userId, title, position: count ?? 0 })
+    .insert({ user_id: userId, title, position })
   if (error) throw error
   notifyChanged()
 }
@@ -153,10 +167,14 @@ export type RoutineExerciseInput = {
 
 export async function addRoutineExercise(routineId: string, input: RoutineExerciseInput) {
   const supabase = createClient()
-  const { count } = await supabase
+  const { data: last, error: lastError } = await supabase
     .from('routine_exercises')
-    .select('id', { count: 'exact', head: true })
+    .select('position')
     .eq('routine_id', routineId)
+    .order('position', { ascending: false })
+    .limit(1)
+  if (lastError) throw lastError
+  const position = (last?.[0]?.position ?? -1) + 1
   const { error } = await supabase.from('routine_exercises').insert({
     routine_id: routineId,
     name: input.name,
@@ -166,7 +184,7 @@ export async function addRoutineExercise(routineId: string, input: RoutineExerci
     rir: input.rir,
     note: input.note || null,
     bodyweight: input.bodyweight ?? false,
-    position: count ?? 0,
+    position,
   })
   if (error) throw error
   notifyChanged()
@@ -201,51 +219,32 @@ export async function deleteRoutineExercise(exerciseId: string) {
 
 export function useRoutines() {
   const [routines, setRoutines] = useState<ManagedRoutineDay[]>([])
-  const refresh = useCallback(async (userId: string) => {
+  const userId = useUserId()
+
+  const refresh = useCallback(async (id: string) => {
     try {
-      setRoutines(await fetchRoutines(userId))
+      setRoutines(await fetchRoutines(id))
+      clearLoadFailure('routines')
     } catch (e) {
       console.error('Failed to load routines', e)
-      setRoutines([])
+      reportLoadFailure('routines', e, () => refresh(id))
     }
   }, [])
 
   useEffect(() => {
-    const supabase = createClient()
-    let active = true
-
-    const applyUser = (userId: string | null | undefined) => {
-      if (!active || !userId) return
-      refresh(userId)
+    if (!userId) {
+      setRoutines([])
+      return
     }
+    refresh(userId)
+  }, [userId, refresh])
 
-    supabase.auth
-      .getSession()
-      .then(({ data }: { data: { session: { user: { id: string } | null } | null } }) =>
-        applyUser(data.session?.user?.id),
-      )
-
-    const {
-      data: { subscription },
-    } = supabase.auth.onAuthStateChange((_event: string, session: { user: { id: string } | null } | null) => {
-      applyUser(session?.user?.id)
-    })
-
-    const onChanged = () => {
-      supabase.auth
-        .getSession()
-        .then(({ data }: { data: { session: { user: { id: string } | null } | null } }) =>
-          applyUser(data.session?.user?.id),
-        )
-    }
+  useEffect(() => {
+    if (!userId) return
+    const onChanged = () => refresh(userId)
     window.addEventListener(ROUTINES_CHANGED, onChanged)
-
-    return () => {
-      active = false
-      subscription.unsubscribe()
-      window.removeEventListener(ROUTINES_CHANGED, onChanged)
-    }
-  }, [refresh])
+    return () => window.removeEventListener(ROUTINES_CHANGED, onChanged)
+  }, [userId, refresh])
 
   return routines
 }

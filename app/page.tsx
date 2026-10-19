@@ -9,6 +9,7 @@ import { AnalyticsScreen } from '@/components/analytics-screen'
 import { RoutinesScreen } from '@/components/routines-screen'
 import { AuthScreen } from '@/components/auth-screen'
 import { UserMenu } from '@/components/user-menu'
+import { DataErrorBanner } from '@/components/data-error-banner'
 import { useSession } from '@/lib/auth'
 
 export default function Page() {
@@ -36,6 +37,7 @@ export default function Page() {
               </span>
               <UserMenu />
             </div>
+            <DataErrorBanner />
             <div className="relative flex-1 overflow-hidden">
               {editWorkoutId ? (
                 <EditWorkoutScreen

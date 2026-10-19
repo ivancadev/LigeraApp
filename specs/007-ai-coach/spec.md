@@ -1,56 +1,66 @@
-# 007 — AI coach: classify exercises & suggest variations (spec, FUTURE)
+# 007 — AI coach: classify unknown exercises (spec, SHIPPED)
 
-**Status:** proposed (not scheduled)
+**Status:** shipped (classification only; plateau coaching deferred)
 **Owner:** Ivar
-**Constitution refs:** §1, §2.2, §3.4
+**Constitution refs:** §2.2, §2.5, §3.4, §3.5, §3.10, §3.11
 
-> Written now to capture intent and constraints. **Not implemented** in the
-> current iteration. When picked up, confirm scope before coding.
+> Scope confirmed with the user: this iteration ships **classification only**.
+> Plateau coaching (below) remains deferred and is **not implemented**.
 
 ## Problem / why
 
-Two related gaps that a language model can close cheaply, without leaving the app:
-
-1. **Classification** — when a new exercise name is neither in the seeded map nor
-   matched by the keyword heuristic, the user must choose the muscle group by
-   hand (spec 006). A model can usually infer it from the name.
-2. **Plateau coaching** — when an exercise's kg/volume has not improved over N
-   sessions, suggest a variation or a rep/RIR tweak.
+When a new exercise name is neither in the seeded map nor matched by the keyword
+heuristic, the user must choose the muscle group by hand (spec 006). A language
+model can usually infer it from the name, removing a manual step without leaving
+the app.
 
 ## User stories
 
 - As Ivar, I want unknown exercise names auto-classified so I rarely pick a group.
-- As Ivar, I want a nudge when I've stalled, with a concrete variation to try.
+- As Ivar, I want the suggestion to be correctable and optional.
 
-## Functional requirements (draft)
+## Functional requirements
 
-- **FR1** A **server** route (`app/api/...`) performs classification; the provider
-  key lives only server-side (env var), never shipped to the client.
-- **FR2** The route returns a structured result `{ muscleGroup, confidence }` from
-  a closed set of `MUSCLE_GROUPS` (validated server-side).
-- **FR3** Results are cached in `exercises.muscle_group`; the client only persists
-  confirmed groups (respecting spec 002/006 override precedence).
-- **FR4** Failure/timeout degrades gracefully to the heuristic / `Otros` and never
-  blocks saving a workout.
-- **FR5** Plateau detection reuses logged data (e.g. last N sessions with no
-  increase in best set or volume) and is computed client-side; the model only
-  phrases the suggestion. No workout data leaves the device except an exercise
-  name (classification) — document this explicitly.
-- **FR6** The feature is opt-in and rate-limited to control cost.
+- **FR1** A **server** route (`app/api/classify-exercise`) performs the
+  classification; the provider key lives only server-side (env var), never
+  shipped to the client. ✅
+- **FR2** The route returns a structured `{ muscleGroup, confidence }` from the
+  closed `MUSCLE_GROUPS` set, validated server-side. ✅
+- **FR3** Results are cached in `exercises.muscle_group`; only the group the user
+  finally confirms is persisted, respecting the spec 002/006 override precedence
+  (an existing user override is never overwritten). ✅
+- **FR4** Failure/timeout degrades gracefully to the manual picker / `Otros` and
+  never blocks saving a workout. ✅
+- **FR5** Only the exercise **name** is sent to the provider. No workout or
+  personal data leaves the device; the name is never logged or stored. ✅
+- **FR6** The feature is opt-in (an explicit `Suggest with AI` button) and
+  rate-limited per user per day. ✅
+
+### Deferred (not implemented)
+
+- Plateau detection ("no improvement over N sessions") and a dismissible
+  suggestion card. Revisit as a separate feature; it can be computed
+  client-side so no data leaves the device.
 
 ## Acceptance criteria
 
-- [ ] (draft) New unknown exercise → suggested group, correctable by the user.
-- [ ] (draft) No API key is ever present in client bundles.
-- [ ] (draft) Stalled exercise → one suggestion, dismissible.
+- [x] New unknown exercise → suggested group, correctable by the user.
+- [x] No API key is ever present in client bundles.
+- [x] Missing key / provider failure / quota exhausted → manual picker still works.
 
-## Out of scope (for now)
+## Privacy
+
+The route receives `{ name }` and nothing else. It sends the name to Google
+Gemini and returns a group. The `ai_requests` table stores only `user_id`,
+`kind` and `created_at` — never the exercise name. See `docs/SUPABASE.md`.
+
+## Out of scope
 
 - Sending personal training data to a provider.
 - Auto-writing routines or renaming exercises.
+- AI-phrased plateau coaching.
 
-## Open questions
+## Open questions (for the deferred plateau work)
 
-- Provider/model choice and cost ceiling.
-- Where the prompt + taxonomy live (server constants vs. DB).
-- Whether plateau coaching is a separate feature from classification.
+- Whether plateau coaching reuses this route or stays fully client-side.
+- Cost ceiling if the free tier ever changes.

@@ -90,8 +90,13 @@ Update this file every time a feature ships to keep it accurate.
   combines Cuádriceps+Isquiotibiales+Glúteos+Gemelos for volume, sets, trend and
   chart. Adding an exercise whose group can't be detected now reveals an inline
   "which muscle group?" picker before it is added.
-- **Spec 007 — AI coach**: drafted as a future spec (LLM classification of unknown
-  exercises via a server-only key + plateau suggestions). Not implemented.
+- **Spec 007 — AI exercise classification (shipped)**: unknown names can be
+  classified with an explicit `Suggest with AI` button. The client calls
+  `app/api/classify-exercise`, which authenticates, consumes a per-user daily
+  quota (migration `0009_ai_requests.sql`) and queries Google Gemini with a
+  constrained JSON schema over `MUSCLE_GROUPS`. Only the exercise name leaves the
+  device; any failure falls back to the manual group picker. Plateau coaching is
+  deferred.
 
 ## Decisions (and why)
 
@@ -122,5 +127,6 @@ Update this file every time a feature ships to keep it accurate.
 - Deload reminder (the PDF calls for deload every 6–8 weeks).
 - Google OAuth sign-in (email/password is in place).
 - Reorder exercises / routine days in the Routines tab.
-- **AI coach** (spec 007): LLM classification of unknown exercise names via a
-  server-only key, plus variation suggestions when an exercise plateaus.
+- **Plateau coaching** (spec 007, deferred half): detect "no improvement over N
+  sessions" client-side and show a dismissible suggestion card. Classification
+  already shipped.

@@ -1,9 +1,10 @@
 'use client'
 
-import { useMemo, useState } from 'react'
-import { Check, Pencil, X } from 'lucide-react'
+import { useEffect, useMemo, useState } from 'react'
+import { Check, Pencil, Sparkles, X } from 'lucide-react'
 import { MUSCLE_GROUPS, isRecognizedGroup, type MuscleGroup } from '@/lib/muscles'
 import type { PickerOption } from '@/lib/exercises'
+import { classifyExercise } from '@/lib/ai'
 import { cn } from '@/lib/utils'
 
 export function ExercisePicker({
@@ -21,6 +22,9 @@ export function ExercisePicker({
 }) {
   const [custom, setCustom] = useState('')
   const [customGroup, setCustomGroup] = useState<MuscleGroup | ''>('')
+  const [aiState, setAiState] = useState<'idle' | 'loading' | 'done' | 'error'>('idle')
+  const [aiGroup, setAiGroup] = useState<MuscleGroup | null>(null)
+  const [aiConfidence, setAiConfidence] = useState<number | null>(null)
   const [managing, setManaging] = useState(false)
   const [editingName, setEditingName] = useState<string | null>(null)
   const [editValue, setEditValue] = useState('')
@@ -37,6 +41,29 @@ export function ExercisePicker({
   const trimmed = custom.trim()
   const isExisting = options.some((o) => o.name.toLowerCase() === trimmed.toLowerCase())
   const needsGroup = trimmed.length > 0 && !isExisting && !isRecognizedGroup(trimmed, overrides)
+
+  useEffect(() => {
+    setAiState('idle')
+    setAiGroup(null)
+    setAiConfidence(null)
+    setCustomGroup('')
+  }, [trimmed])
+
+  async function suggestGroup() {
+    if (!trimmed || aiState === 'loading') return
+    setAiState('loading')
+    setAiGroup(null)
+    setAiConfidence(null)
+    const result = await classifyExercise(trimmed)
+    if (result && result.muscleGroup !== 'Otros') {
+      setCustomGroup(result.muscleGroup)
+      setAiGroup(result.muscleGroup)
+      setAiConfidence(result.confidence)
+      setAiState('done')
+    } else {
+      setAiState('error')
+    }
+  }
 
   function submit() {
     if (!trimmed) return
@@ -169,10 +196,33 @@ export function ExercisePicker({
 
       {needsGroup && (
         <div className="mx-4 mt-3 rounded-xl border border-primary/30 bg-primary/8 p-3">
-          <p className="text-xs font-semibold text-foreground">Which muscle group?</p>
-          <p className="mt-0.5 text-[11px] text-muted-foreground">
-            {`We couldn't detect "${trimmed}". Pick a group.`}
-          </p>
+          <div className="flex items-start justify-between gap-2">
+            <div className="min-w-0">
+              <p className="text-xs font-semibold text-foreground">Which muscle group?</p>
+              <p className="mt-0.5 text-[11px] text-muted-foreground">
+                {`We couldn't detect "${trimmed}". Pick a group.`}
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={suggestGroup}
+              disabled={aiState === 'loading'}
+              className="flex shrink-0 items-center gap-1.5 rounded-lg border border-primary/40 bg-primary/12 px-2.5 py-1.5 text-[11px] font-semibold text-primary transition-colors hover:bg-primary/20 disabled:pointer-events-none disabled:opacity-50"
+            >
+              <Sparkles className="size-3.5" />
+              {aiState === 'loading' ? 'Thinking…' : 'Suggest with AI'}
+            </button>
+          </div>
+          {aiState === 'done' && aiGroup && (
+            <p className="mt-1.5 text-[11px] font-medium text-primary">
+              {`AI suggests ${aiGroup}${aiConfidence != null ? ` · ${Math.round(aiConfidence * 100)}%` : ''}`}
+            </p>
+          )}
+          {aiState === 'error' && (
+            <p className="mt-1.5 text-[11px] text-muted-foreground">
+              No clear match — pick a group.
+            </p>
+          )}
           <div className="mt-2 flex flex-wrap gap-1.5">
             {MUSCLE_GROUPS.map((g) => (
               <button

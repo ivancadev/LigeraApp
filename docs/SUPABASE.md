@@ -92,6 +92,19 @@ Adds a routine-day snapshot to each session:
   re-created because their signature changes (`create or replace` cannot add a
   parameter).
 
+### `0009_ai_requests.sql`
+
+Per-user quota for AI exercise classification (spec 007):
+
+- `ai_requests` (`user_id` → `auth.users`, `kind`, `created_at`), RLS enabled.
+  Owner-only `select`; **no** direct insert/update/delete policies. The table
+  never stores the exercise name.
+- `consume_ai_quota(p_daily_limit int)` — `security definer` RPC that re-checks
+  `auth.uid()`, counts today's requests (UTC), inserts a row when under the
+  limit, and returns `{ allowed, remaining }`. It also prunes rows older than
+  30 days for that user. `execute` is revoked from `public`/`anon` and granted
+  to `authenticated` only.
+
 ## Row Level Security reference
 
 | operation      | profiles                        | workouts / exercises / sets, routines / routine_exercises, exercises |
@@ -104,12 +117,18 @@ Adds a routine-day snapshot to each session:
 All child-table policies resolve ownership through the parent row
 (`workouts` or `routines`): `exists (select 1 from <parent> p where p.id = <fk> and p.user_id = auth.uid())`.
 
+`ai_requests` is owner-only for `select`; writes happen exclusively through the
+`consume_ai_quota` RPC.
+
 ## Env vars (`.env.local`, gitignored)
 
 | var                     | required | purpose                                  |
 | ----------------------- | -------- | ---------------------------------------- |
 | `SUPABASE_URL`          | yes      | project API URL                          |
 | `SUPABASE_ANON_KEY`     | yes      | browser client (public by design)        |
+| `GEMINI_API_KEY`        | no       | server-only key for AI classification    |
+| `GEMINI_MODEL`          | no       | defaults to `gemini-3.1-flash-lite`      |
+| `AI_DAILY_LIMIT`        | no       | per-user daily AI requests (default 20)  |
 
 Mirrored in `.env.example` so agents/tools know the required set.
 

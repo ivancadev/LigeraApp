@@ -35,7 +35,8 @@ constitution.md  →  specs/NNN-feature/spec.md  →  plan.md  →  tasks.md  �
 
 Shipped specs: `001-progression-summary`, `002-exercise-library`,
 `003-lock-completed-sets`, `004-muscle-group-progress`,
-`005-history-routine-name`, `006-muscle-groups` (proposed: `007-ai-coach`).
+`005-history-routine-name`, `006-muscle-groups`,
+`007-ai-coach` (classification only; plateau coaching deferred).
 
 ## Stack
 
@@ -62,6 +63,7 @@ There is **no `lint` script**. Verify with `tsc --noEmit` + `pnpm build`.
 app/
   layout.tsx      root layout: fonts, metadata, viewport, PWA manifest/sw
   page.tsx        session gate; tab router (workout/routines/history/progress)
+  api/classify-exercise/route.ts  server-only AI exercise classification
   globals.css     Tailwind v4 entry
 proxy.ts          root middleware replaced by this proxy (Next 16, refreshed-cookies session)
 components/       client UI screens + shared controls
@@ -75,15 +77,16 @@ lib/
   stats.ts        Epley 1RM, PRs, lastBestSet, exerciseProgress, muscleGroupStats, filters
   workout-data.ts exerciseOptions, defaultRoutineDays (seed), target helpers, DraftSet/DraftExercise
   load-failure.ts store of load failures + reportLoadFailure/clearLoadFailure (drives DataErrorBanner)
+  ai.ts           classifyExercise client helper (timeout + null fallback) for the classify route
   supabase/
     client.ts     browser Supabase client (singleton)
     server.ts     server client via cookies
     middleware.ts updateSession helper consumed by root proxy.ts
-supabase/migrations/   SQL migrations (0001_init, 0002_rir, 0003_routines, 0004_edit_workout, 0005_exercise_library, 0006_workout_name, 0007_routine_position_integrity, 0008_function_grants)
+supabase/migrations/   SQL migrations (0001_init, 0002_rir, 0003_routines, 0004_edit_workout, 0005_exercise_library, 0006_workout_name, 0007_routine_position_integrity, 0008_function_grants, 0009_ai_requests)
 scripts/generate-icons.mjs  pure-Node PNG icon generator (no deps)
 public/           manifest.json, sw.js, icons/
 docs/             constitution.md, ROADMAP.md, SUPABASE.md
-specs/            spec-first feature specs (0000-template, 001..004 shipped)
+specs/            spec-first feature specs (0000-template, 001..007 shipped)
 ```
 
 Screens are interchangeable views rendered inside `app/page.tsx`, switched by
@@ -98,11 +101,13 @@ Screens are interchangeable views rendered inside `app/page.tsx`, switched by
 - `routines` — user_id, title, position (editable routine days, seeded per user, unique `(user_id, position)`)
 - `routine_exercises` — routine_id (FK), name, sets, reps_min, reps_max, rir text, note, bodyweight, position, unique `(routine_id, position)`
 - `exercises` — user_id, name, muscle_group, position (per-user exercise library, seeded per user, unique `(user_id, lower(name))`)
+- `ai_requests` — user_id, kind, created_at (AI classification quota; **never** stores the exercise name)
 
 All cascade on delete. **RLS enabled** on every table:
 - profiles: any authenticated user may **read** usernames (for the planned competition), owner can update.
 - workouts/exercises/sets, routines/routine_exercises and exercises library: **owner-only** on every operation (checks `auth.uid()` up the parent chain).
-- Function `EXECUTE` (migration `0008`): the `log_workout`, `update_logged_workout` and `rename_exercise` RPCs are granted to `authenticated` only (revoked from `public`/`anon`); `handle_new_user` (signup trigger) is granted to `supabase_auth_admin` only. They are `SECURITY DEFINER` and re-check `auth.uid()`.
+- ai_requests: owner-only `select`; inserts only via the `consume_ai_quota` RPC (no direct write policies).
+- Function `EXECUTE` (migrations `0008`/`0009`): the `log_workout`, `update_logged_workout`, `rename_exercise` and `consume_ai_quota` RPCs are granted to `authenticated` only (revoked from `public`/`anon`); `handle_new_user` (signup trigger) is granted to `supabase_auth_admin` only. They are `SECURITY DEFINER` and re-check `auth.uid()`.
 
 See `docs/SUPABASE.md` for applying migrations and the RLS reference.
 
@@ -157,6 +162,18 @@ and workouts changed events. `buildPickerOptions(library, extraNames)` builds th
 picker list (library ∪ logged/routine names), falling back to `exerciseOptions`
 while the library is still empty.
 
+## AI exercise classification (spec 007)
+
+`ExercisePicker` shows a `Suggest with AI` button for unknown names. It calls
+`classifyExercise` (`lib/ai.ts`) → `POST /api/classify-exercise` with `{ name }`.
+The route authenticates with the server Supabase client, consumes the per-user
+daily quota via `consume_ai_quota` (migration `0009`), then calls Google Gemini
+(default `gemini-3.1-flash-lite`, override with `GEMINI_MODEL`) and validates the
+returned group against `MUSCLE_GROUPS`. Only the exercise name leaves the device
+and it is never logged or stored. Any failure returns `null`, so the manual group
+picker keeps working. Requires the server-only `GEMINI_API_KEY`; optional
+`AI_DAILY_LIMIT` (default 20). Plateau coaching is **not** implemented.
+
 ## Conventions
 
 - **Language**: exercise names, routine days, and target text are in **Spanish**
@@ -185,7 +202,8 @@ while the library is still empty.
   (`https://mcp.supabase.com/mcp?project_ref=…`, OAuth, read-only) used by the dba.
 - `.opencode/agents/*.md` defines specialized subagents (dba, workout-domain,
   deploy, optimizador). `.opencode/` is committed (its `node_modules` is ignored).
-- `.env.local` holds `SUPABASE_URL` + `SUPABASE_ANON_KEY` and is gitignored.
+- `.env.local` holds `SUPABASE_URL` + `SUPABASE_ANON_KEY` (+ `GEMINI_API_KEY` for
+  AI classification) and is gitignored.
 - `.env.example` documents every env var an agent/tool may need.
 - After changing opencode config or agents, tell the user to **restart opencode**.
 
@@ -208,4 +226,6 @@ while the library is still empty.
   return/accept every display group (empty ones show `No sets yet`) and expand the
   `Pierna` rollup. Adding a new exercise via `ExercisePicker` asks for a muscle
   group when the name is unrecognized (`ensureExercise(userId, name, muscleGroup)`).
+- `classifyExercise(name)` (`lib/ai.ts`) → optional AI muscle-group suggestion for
+  unknown names; returns `{ muscleGroup, confidence } | null`.
 - History shows `workout.name` (routine-day snapshot) or `Entrenamiento libre`.

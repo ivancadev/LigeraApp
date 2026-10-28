@@ -17,6 +17,8 @@ The user can:
 - Log each set with kg / reps / RIR and mark sets complete.
 - Save sessions to Supabase atomically via the `log_workout` RPC.
 - Review past workouts (History) and long-term strength trends (Progress).
+- Chat with an AI coach to ask training questions and generate routine tables on
+  demand; generated tables are previewed and only saved with explicit confirmation.
 
 **North star (deferred, not implemented):** friend-to-friend competition —
 weekly volume leaderboards. The schema is normalized with this in mind;
@@ -89,8 +91,10 @@ current: when a feature changes, update its spec in the same change.
 
 - Exercise names stay **exactly** as logged (Spanish, accents intact). Never
   translate or normalize an exercise name in data or UI.
-- Target values derive from the PDF-seeded `defaultRoutineDays`; do not invent
-  programs.
+- The PDF-seeded `defaultRoutineDays` remain the baseline for the original plan.
+  AI-generated routine tables are allowed only on explicit user request, with safe
+  ranges, preview, and confirmation before saving. They never replace the seeded
+  plan automatically.
 - `lib/workout-data.ts` must not import `lib/data.ts` (never create a cycle).
 - `Intl.NumberFormat('en-US')` for big numbers; kg keeps its own decimals.
 - Prefer editing existing files and following neighboring patterns.
@@ -105,3 +109,11 @@ This constitution changes only by deliberate amendment:
 4. Note the amendment in `docs/ROADMAP.md`.
 
 Silent drift from this document is a bug.
+
+### Amendment 2026-10-27 — AI-generated routine tables
+
+Approved by Ivar for spec `009-ai-chat`. The AI coach may propose routine tables
+on explicit request, but only with safe ranges, Spanish content, an on-screen
+preview, and explicit confirmation before anything is written to `Routines`.
+This amendment does not add a fifth tab: the chat opens as an overlay from the
+existing header.

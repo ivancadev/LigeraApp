@@ -12,6 +12,7 @@ routine. The app lets the user:
 - Log each set with kg / reps / RIR; mark sets complete
 - Save sessions to Supabase atomically via the `log_workout` RPC (online-only, no offline cache)
 - Review past workouts (History) and long-term strength trends (Progress)
+- Chat with an AI coach and generate routine tables on demand, with preview and explicit save
 
 > Product north star (deferred, not implemented): friend-to-friend competition
 > (weekly volume leaderboards). The schema was normalized with this in mind.
@@ -36,7 +37,8 @@ constitution.md  →  specs/NNN-feature/spec.md  →  plan.md  →  tasks.md  �
 Shipped specs: `001-progression-summary`, `002-exercise-library`,
 `003-lock-completed-sets`, `004-muscle-group-progress`,
 `005-history-routine-name`, `006-muscle-groups`,
-`007-ai-coach` (exercise classification), `008-ai-training-advice`.
+`007-ai-coach` (exercise classification), `008-ai-training-advice`,
+`009-ai-chat` (generated routine tables).
 
 ## Stack
 
@@ -65,10 +67,13 @@ app/
   page.tsx        session gate; tab router (workout/routines/history/progress)
   api/classify-exercise/route.ts  server-only AI exercise classification
   api/coach-advice/route.ts       server-only AI training tip (spec 008)
+  api/coach-chat/route.ts         server-only AI chat + routine-table generation (spec 009)
   globals.css     Tailwind v4 entry
 proxy.ts          root middleware replaced by this proxy (Next 16, refreshed-cookies session)
 components/       client UI screens + shared controls
   ui/             shadcn/ui primitives (button, input, ...)
+  coach-chat.tsx  global AI chat overlay (spec 009)
+  routine-table.tsx generated table preview + save actions
 lib/
   auth.ts         shared session store + useSession/useUserId/useProfile, signUp/signIn/signOut
   data.ts         Workout types, fetchWorkouts, saveWorkout (RPC), deleteWorkout/Exercise, useWorkouts
@@ -78,19 +83,22 @@ lib/
   stats.ts        Epley 1RM, PRs, lastBestSet, exerciseProgress, muscleGroupStats, filters
   workout-data.ts exerciseOptions, defaultRoutineDays (seed), target helpers, DraftSet/DraftExercise
   load-failure.ts store of load failures + reportLoadFailure/clearLoadFailure (drives DataErrorBanner)
-  ai.ts           classifyExercise + fetchAdvice client helpers (timeout + null fallback)
+  ai.ts           classifyExercise + fetchAdvice + sendCoachChat client helpers
   coach.ts        client signal engine: buildCoachSignals/summarizeSignals/localAdvice, TrainingAdvice
+  routine-plan.ts shared RoutinePlan types, limits and server/client sanitizer
+  chat-store.ts   per-user chat history cache (localStorage `ligera:chat`)
+  routine-save.ts saveRoutinePlan RPC + routines/exercises change events
   advice-store.ts per-user/day advice cache + dismiss (localStorage `ligera:advice`)
-  gemini.ts       server-only shared Gemini generateJson helper (used by both AI routes)
+  gemini.ts       server-only shared Gemini generateJson helper (used by all AI routes)
   supabase/
     client.ts     browser Supabase client (singleton)
     server.ts     server client via cookies
     middleware.ts updateSession helper consumed by root proxy.ts
-supabase/migrations/   SQL migrations (0001_init, 0002_rir, 0003_routines, 0004_edit_workout, 0005_exercise_library, 0006_workout_name, 0007_routine_position_integrity, 0008_function_grants, 0009_ai_requests, 0010_consume_ai_quota_kind)
+supabase/migrations/   SQL migrations (0001_init, 0002_rir, 0003_routines, 0004_edit_workout, 0005_exercise_library, 0006_workout_name, 0007_routine_position_integrity, 0008_function_grants, 0009_ai_requests, 0010_consume_ai_quota_kind, 0011_save_generated_routines)
 scripts/generate-icons.mjs  pure-Node PNG icon generator (no deps)
 public/           manifest.json, sw.js, icons/
 docs/             constitution.md, ROADMAP.md, SUPABASE.md
-specs/            spec-first feature specs (0000-template, 001..008 shipped)
+specs/            spec-first feature specs (0000-template, 001..009 shipped)
 ```
 
 Screens are interchangeable views rendered inside `app/page.tsx`, switched by
@@ -105,13 +113,13 @@ Screens are interchangeable views rendered inside `app/page.tsx`, switched by
 - `routines` — user_id, title, position (editable routine days, seeded per user, unique `(user_id, position)`)
 - `routine_exercises` — routine_id (FK), name, sets, reps_min, reps_max, rir text, note, bodyweight, position, unique `(routine_id, position)`
 - `exercises` — user_id, name, muscle_group, position (per-user exercise library, seeded per user, unique `(user_id, lower(name))`)
-- `ai_requests` — user_id, kind (`classify` | `advice`), created_at (AI quota; **never** stores the exercise name or any workout data)
+- `ai_requests` — user_id, kind (`classify` | `advice` | `chat`), created_at (AI quota; **never** stores the exercise name, chat content or any workout data)
 
 All cascade on delete. **RLS enabled** on every table:
 - profiles: any authenticated user may **read** usernames (for the planned competition), owner can update.
 - workouts/exercises/sets, routines/routine_exercises and exercises library: **owner-only** on every operation (checks `auth.uid()` up the parent chain).
 - ai_requests: owner-only `select`; inserts only via the `consume_ai_quota` RPC (no direct write policies).
-- Function `EXECUTE` (migrations `0008`/`0009`/`0010`): the `log_workout`, `update_logged_workout`, `rename_exercise` and `consume_ai_quota` RPCs are granted to `authenticated` only (revoked from `public`/`anon`); `handle_new_user` (signup trigger) is granted to `supabase_auth_admin` only. They are `SECURITY DEFINER` and re-check `auth.uid()`. Migration `0010` drops/recreates `consume_ai_quota` with a `p_kind` parameter and re-grants `EXECUTE` on the new signature.
+- Function `EXECUTE` (migrations `0008`/`0009`/`0010`/`0011`): the `log_workout`, `update_logged_workout`, `rename_exercise`, `consume_ai_quota` and `save_generated_routines` RPCs are granted to `authenticated` only (revoked from `public`/`anon`); `handle_new_user` (signup trigger) is granted to `supabase_auth_admin` only. They are `SECURITY DEFINER` and re-check `auth.uid()`. Migration `0010` drops/recreates `consume_ai_quota` with a `p_kind` parameter and re-grants `EXECUTE` on the new signature.
 
 See `docs/SUPABASE.md` for applying migrations and the RLS reference.
 
@@ -166,6 +174,11 @@ and workouts changed events. `buildPickerOptions(library, extraNames)` builds th
 picker list (library ∪ logged/routine names), falling back to `exerciseOptions`
 while the library is still empty.
 
+`saveRoutinePlan(days, mode)` (`lib/routine-save.ts`) is the only path for saving
+AI-generated tables. It calls the `save_generated_routines` RPC atomically
+(`append` or confirmed `replace`), then dispatches both the routines and exercises
+change events. It never writes until the user taps a save action in the preview.
+
 ## AI exercise classification (spec 007)
 
 `ExercisePicker` shows a `Suggest with AI` button for unknown names. It calls
@@ -201,6 +214,27 @@ a second tap does not spend quota, and `Dismiss` hides it for the day. Any failu
 falls back to `localAdvice` and never blocks the Workout screen. The daily limit is
 shared with classification.
 
+## AI chat & generated routine tables (spec 009)
+
+`CoachChat` (`components/coach-chat.tsx`) is a global overlay opened with the
+`Sparkles` button in the app header. It is not a fifth tab. The chat history is
+cached per user in `localStorage` (`ligera:chat`, via `lib/chat-store.ts`), capped
+at 40 messages; only the last 8 are sent as context.
+
+`sendCoachChat` (`lib/ai.ts`) → `POST /api/coach-chat` with the conversation plus
+the user's exercise library names/groups. The route authenticates, consumes quota
+with `p_kind: 'chat'`, and calls Gemini for `{ reply, table }` in Spanish. The
+table is a closed `RoutinePlan` (`lib/routine-plan.ts`): 1–7 days, 1–15 exercises
+per day, sets 1–10, reps 1–50, RIR text, optional note, bodyweight flag and a
+muscle group from `MUSCLE_GROUPS`. The server sanitizes both the history and the
+generated table. No workouts, dates, kg or set lists leave the device.
+
+`components/routine-table.tsx` renders the preview with `Add to Routines`,
+`Replace all` (confirmed) and `Discard`. Nothing is written before a save action.
+`saveRoutinePlan` (`lib/routine-save.ts`) calls the `save_generated_routines` RPC
+(migration `0011`), which appends or replaces atomically and upserts new exercises
+into the library.
+
 ## Conventions
 
 - **Language**: exercise names, routine days, and target text are in **Spanish**
@@ -230,7 +264,7 @@ shared with classification.
 - `.opencode/agents/*.md` defines specialized subagents (dba, workout-domain,
   deploy, optimizador). `.opencode/` is committed (its `node_modules` is ignored).
 - `.env.local` holds `SUPABASE_URL` + `SUPABASE_ANON_KEY` (+ `GEMINI_API_KEY` for
-  AI classification) and is gitignored.
+  the AI features) and is gitignored.
 - `.env.example` documents every env var an agent/tool may need.
 - After changing opencode config or agents, tell the user to **restart opencode**.
 
@@ -260,6 +294,14 @@ shared with classification.
   the summary (no dates/set lists) is sent.
 - `fetchAdvice(summary)` (`lib/ai.ts`) → `POST /api/coach-advice`; returns
   `TrainingAdvice | null` (never throws).
+- `sendCoachChat(messages, library)` (`lib/ai.ts`) → `POST /api/coach-chat`; returns
+  `{ ok, reply, table }` or a typed error, never throws.
+- `sanitizeRoutinePlan(value)` (`lib/routine-plan.ts`) → shared server/client
+  validation for AI tables and cached chat messages.
+- `loadChat`/`saveChat`/`clearChat` (`lib/chat-store.ts`) → per-user chat history in
+  `localStorage` (`ligera:chat`), capped at 40 messages.
+- `saveRoutinePlan(days, mode)` (`lib/routine-save.ts`) → atomic RPC save + change
+  events; `mode` is `append` or `replace`.
 - `loadAdvice`/`saveAdvice`/`clearAdvice` (`lib/advice-store.ts`) → per-user/day tip
   cache in `localStorage` (`ligera:advice`); `todayKey()` is the local day key.
 - History shows `workout.name` (routine-day snapshot) or `Entrenamiento libre`.

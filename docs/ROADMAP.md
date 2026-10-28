@@ -108,6 +108,21 @@ Update this file every time a feature ships to keep it accurate.
   per user/day in `localStorage` (`ligera:advice`) and can be dismissed; any
   failure uses the local fallback. The deferred half of spec 007 now lives here.
 
+### AI chat + generated tables (spec 009, current iteration)
+
+- **Spec 009 — AI chat & generated routine tables**: a `Sparkles` button in the
+  header opens a global `CoachChat` overlay (no fifth tab). The user can ask for a
+  table in Spanish; `app/api/coach-chat` authenticates, consumes quota with
+  `p_kind: 'chat'`, and returns `{ reply, table }` against a closed `RoutinePlan`
+  schema (1–7 days, 1–15 exercises/day, safe ranges, `MUSCLE_GROUPS`). Only the
+  last 8 messages + exercise library names/groups leave the device. The preview
+  offers `Add to Routines`, confirmed `Replace all` and `Discard`; saving goes
+  through the atomic `save_generated_routines` RPC (migration `0011`) and then
+  dispatches the routines/exercises change events.
+- **Constitution amendment**: §1 and §5 now allow AI-generated routine tables on
+  explicit request, with preview and confirmation; the seeded PDF routine remains
+  the baseline and is never replaced automatically.
+
 ## Decisions (and why)
 
 - **Normalized schema** (4 tables) instead of JSONB per-workout — keeps the door

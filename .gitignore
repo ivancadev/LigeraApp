@@ -6,14 +6,26 @@ __v0_jsx-dev-runtime.ts
 .v0-trash/
 .vercel/
 
-# Environment variables
-.env*.local
+# Environment / secrets
+.env*
+!.env.example
 
 # Common ignores
 node_modules
 .next/
 .DS_Store
+Thumbs.db
 *.tsbuildinfo
+
+# Logs / build artifacts
+*.log
+.turbo/
+out/
+coverage/
+
+# Local Supabase
+.supabase/
+supabase/.temp/
 
 # v0 export artifact
 *.zip

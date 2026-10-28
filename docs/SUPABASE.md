@@ -154,15 +154,15 @@ All child-table policies resolve ownership through the parent row
 
 ## Env vars (`.env.local`, gitignored)
 
-| var                     | required | purpose                                  |
-| ----------------------- | -------- | ---------------------------------------- |
-| `SUPABASE_URL`          | yes      | project API URL                          |
-| `SUPABASE_ANON_KEY`     | yes      | browser client (public by design)        |
-| `GEMINI_API_KEY`        | no       | server-only key for the AI routes        |
-| `GEMINI_MODEL`          | no       | defaults to `gemini-3.1-flash-lite`      |
-| `AI_DAILY_LIMIT`        | no       | per-user daily AI requests (default 20)  |
+| var                             | required | purpose                                  |
+| ------------------------------- | -------- | ---------------------------------------- |
+| `NEXT_PUBLIC_SUPABASE_URL`      | yes      | project API URL                          |
+| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | yes      | browser client (public by design)        |
+| `GEMINI_API_KEY`               | no       | server-only key for the AI routes        |
+| `GEMINI_MODEL`                 | no       | defaults to `gemini-3.1-flash-lite`      |
+| `AI_DAILY_LIMIT`               | no       | per-user daily AI requests (default 20)  |
 
-Mirrored in `.env.example` so agents/tools know the required set.
+`.env.example` is the single template for the required set (agents/tools included).
 
 ## MCP servers (for AI tooling, optional)
 

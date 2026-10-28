@@ -263,8 +263,8 @@ into the library.
   (`https://mcp.supabase.com/mcp?project_ref=…`, OAuth, read-only) used by the dba.
 - `.opencode/agents/*.md` defines specialized subagents (dba, workout-domain,
   deploy, optimizador). `.opencode/` is committed (its `node_modules` is ignored).
-- `.env.local` holds `SUPABASE_URL` + `SUPABASE_ANON_KEY` (+ `GEMINI_API_KEY` for
-  the AI features) and is gitignored.
+- `.env.local` holds `NEXT_PUBLIC_SUPABASE_URL` + `NEXT_PUBLIC_SUPABASE_ANON_KEY`
+  (+ `GEMINI_API_KEY` for the AI features) and is gitignored.
 - `.env.example` documents every env var an agent/tool may need.
 - After changing opencode config or agents, tell the user to **restart opencode**.
 

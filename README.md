@@ -3,7 +3,7 @@
 
   # Ligera
 
-  **Tracker de entrenamiento mobile-first para una rutina avanzada de 5 días.**
+  **Tracker de entrenamiento mobile-first para una rutina avanzada .**
 
   Registra series con kg, reps y RIR, revisa tu progreso y deja que el coach IA
   te ayude a planificar. Instalable como PWA, pensada para usarse en el gimnasio.

@@ -1,6 +1,7 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
+import { Sparkles } from 'lucide-react'
 import { BottomNav, type Screen } from '@/components/bottom-nav'
 import { WorkoutScreen } from '@/components/workout-screen'
 import { HistoryScreen } from '@/components/history-screen'
@@ -10,12 +11,18 @@ import { RoutinesScreen } from '@/components/routines-screen'
 import { AuthScreen } from '@/components/auth-screen'
 import { UserMenu } from '@/components/user-menu'
 import { DataErrorBanner } from '@/components/data-error-banner'
+import { CoachChat } from '@/components/coach-chat'
 import { useSession } from '@/lib/auth'
 
 export default function Page() {
   const [screen, setScreen] = useState<Screen>('workout')
   const [editWorkoutId, setEditWorkoutId] = useState<string | null>(null)
+  const [chatOpen, setChatOpen] = useState(false)
   const { session, loading } = useSession()
+
+  useEffect(() => {
+    if (!session) setChatOpen(false)
+  }, [session])
 
   return (
     <main className="flex min-h-svh items-center justify-center bg-background p-0 sm:p-6">
@@ -35,7 +42,18 @@ export default function Page() {
               <span className="text-[11px] font-bold uppercase tracking-widest text-foreground">
                 Ligera
               </span>
-              <UserMenu />
+              <div className="flex items-center gap-1">
+                <button
+                  type="button"
+                  onClick={() => setChatOpen(true)}
+                  aria-label="Open AI coach"
+                  title="AI Coach"
+                  className="rounded-md p-1.5 text-muted-foreground transition-colors hover:text-primary"
+                >
+                  <Sparkles className="size-4" />
+                </button>
+                <UserMenu />
+              </div>
             </div>
             <DataErrorBanner />
             <div className="relative flex-1 overflow-hidden">
@@ -62,6 +80,16 @@ export default function Page() {
                 setScreen(next)
               }}
             />
+            {chatOpen && (
+              <CoachChat
+                onClose={() => setChatOpen(false)}
+                onOpenRoutines={() => {
+                  setEditWorkoutId(null)
+                  setScreen('routines')
+                  setChatOpen(false)
+                }}
+              />
+            )}
           </>
         )}
       </div>

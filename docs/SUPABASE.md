@@ -94,7 +94,7 @@ Adds a routine-day snapshot to each session:
 
 ### `0009_ai_requests.sql`
 
-Per-user quota for the AI features (specs 007/008):
+Per-user quota for the AI features (specs 007/008/009):
 
 - `ai_requests` (`user_id` → `auth.users`, `kind`, `created_at`), RLS enabled.
   Owner-only `select`; **no** direct insert/update/delete policies. The table
@@ -113,10 +113,28 @@ Generalizes the quota RPC for the training-advice feature (spec 008):
 - Drops `consume_ai_quota(integer)` and recreates it as
   `consume_ai_quota(p_daily_limit integer default 20, p_kind text default 'classify')`
   (a changed signature requires drop/recreate, not `create or replace`).
-- The daily count remains **shared** between classification and advice; `kind`
-  (`classify` | `advice`) is recorded for traceability only.
+- The daily count remains **shared** between classification, advice and chat;
+  `kind` (`classify` | `advice` | `chat`) is recorded for traceability only.
 - `execute` is re-revoked from `public`/`anon` and re-granted to
   `authenticated`/`service_role` on the new signature.
+
+### `0011_save_generated_routines.sql`
+
+Atomic save for AI-generated routine tables (spec 009):
+
+- `save_generated_routines(p_days jsonb, p_mode text default 'append')` —
+  `security definer`, `search_path = public`, re-checks `auth.uid()`.
+- Validates `p_mode` (`append` | `replace`) and 1–7 days with 1–15 exercises each.
+- `append` starts at `max(position) + 1`; `replace` deletes the user's routines
+  (cascade) first.
+- Inserts `routines` + `routine_exercises`, clamps sets/reps and RIR/note lengths,
+  and upserts new exercise names into `exercises` with their muscle group.
+- `execute` is revoked from `public`/`anon` and granted to
+  `authenticated`/`service_role`.
+
+Nothing is stored from the chat conversation itself: the client keeps history in
+`localStorage` (`ligera:chat`) and only sends messages + library names/groups to
+`/api/coach-chat`.
 
 ## Row Level Security reference
 
@@ -131,19 +149,20 @@ All child-table policies resolve ownership through the parent row
 (`workouts` or `routines`): `exists (select 1 from <parent> p where p.id = <fk> and p.user_id = auth.uid())`.
 
 `ai_requests` is owner-only for `select`; writes happen exclusively through the
-`consume_ai_quota` RPC.
+`consume_ai_quota` RPC. AI-generated routines are written only through the
+`save_generated_routines` RPC, which scopes every row to `auth.uid()`.
 
 ## Env vars (`.env.local`, gitignored)
 
-| var                     | required | purpose                                  |
-| ----------------------- | -------- | ---------------------------------------- |
-| `SUPABASE_URL`          | yes      | project API URL                          |
-| `SUPABASE_ANON_KEY`     | yes      | browser client (public by design)        |
-| `GEMINI_API_KEY`        | no       | server-only key for the AI routes        |
-| `GEMINI_MODEL`          | no       | defaults to `gemini-3.1-flash-lite`      |
-| `AI_DAILY_LIMIT`        | no       | per-user daily AI requests (default 20)  |
+| var                             | required | purpose                                  |
+| ------------------------------- | -------- | ---------------------------------------- |
+| `NEXT_PUBLIC_SUPABASE_URL`      | yes      | project API URL                          |
+| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | yes      | browser client (public by design)        |
+| `GEMINI_API_KEY`               | no       | server-only key for the AI routes        |
+| `GEMINI_MODEL`                 | no       | defaults to `gemini-3.1-flash-lite`      |
+| `AI_DAILY_LIMIT`               | no       | per-user daily AI requests (default 20)  |
 
-Mirrored in `.env.example` so agents/tools know the required set.
+`.env.example` is the single template for the required set (agents/tools included).
 
 ## MCP servers (for AI tooling, optional)
 
